@@ -52,7 +52,7 @@ Skips là applicability, không né lỗi: original touch tilt; quality-gate mob
 Workflow [quality-gate.yml](../.github/workflows/quality-gate.yml):
 
 - Trigger `pull_request` targeting `main`, kể cả Draft PR.
-- `ubuntu-latest`, Node24.19.0, pnpm11.7.0 khớp configuration; frozen lockfile.
+- Standard `ubuntu-24.04` LTS, Node24.19.0, pnpm11.7.0 khớp configuration; frozen lockfile. Runner pin để tránh migration tự động của ubuntu-latest.
 - TypeScript → ESLint → unit → production build → Chromium-only E2E.
 - Chỉ cài Chromium headless shell và OS dependencies suite cần; không Firefox/WebKit.
 - `contents: read`, checkout `persist-credentials: false`, pinned action SHAs.
@@ -60,6 +60,8 @@ Workflow [quality-gate.yml](../.github/workflows/quality-gate.yml):
 - Concurrency cùng PR, timeout20 phút; artifact `frontend-review-evidence`, retention7 ngày.
 
 [Run CI đầu tiên](https://github.com/Tran-Nhat-Duy1206/BookStore/actions/runs/42452796304) trên `01ee001f71492b5f54773edafc991ff13ec0b60a` đã thực sự **success**, bao gồm mọi step. Đây là baseline CI trước expanded tests, không dùng run cũ để chứng minh HEAD sau sửa. [PR checks](https://github.com/Tran-Nhat-Duy1206/BookStore/pull/1/checks) và final quality-gate PR comment ghi run mới nhất tương ứng HEAD bàn giao.
+
+[CI expanded suite trên source đã sửa](https://github.com/Tran-Nhat-Duy1206/BookStore/actions/runs/42471510311) tại `b9264164e76980bce3b3868dac40f73e4a8be93f` cũng **success**. Run này phát hiện warning action Node20 deprecated; đã chuyển pnpm setup sang v6.1.1 và upload artifact sang v7.0.2 (cả hai khai báo Node24), vẫn pin SHA và giữ nguyên application dependencies. CI của final HEAD phải chạy lại; final PR comment ghi kết quả sau cập nhật runtime, không dùng run trước thay thế.
 
 Không tự cấu hình branch protection/required check hoặc merge. Owner có thể đặt required workflow sau khi duyệt.
 

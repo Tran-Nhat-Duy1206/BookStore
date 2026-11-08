@@ -14,7 +14,7 @@ concurrency:
 jobs:
   frontend:
     name: Typecheck, lint, unit, build and Chromium E2E
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
       CI: "true"
@@ -25,7 +25,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Set up pnpm
-        uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        uses: pnpm/action-setup@9bbca1e9dc2902adb87e8780fe5c98796985a62d # v6.1.1 (Node 24)
         with:
           version: 11.7.0
           run_install: false
@@ -50,7 +50,7 @@ jobs:
         run: pnpm test:e2e
       - name: Retain review evidence
         if: ${{ always() && !cancelled() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2 (Node 24)
         with:
           name: frontend-review-evidence
           path: |

@@ -54,9 +54,9 @@ Visual capture test dùng reduced motion để ảnh ổn định; motion accept
 
 ## GitHub Actions
 
-Workflow `.github/workflows/quality-gate.yml` chạy khi PR targeting `main` được mở/cập nhật, kể cả Draft PR. Chạy frozen install → TypeScript → ESLint → unit → production build → Chromium-only E2E. Standard `ubuntu-latest`, Node 24.19.0, pnpm 11.7.0; không paid runner hoặc deployment.
+Workflow `.github/workflows/quality-gate.yml` chạy khi PR targeting `main` được mở/cập nhật, kể cả Draft PR. Chạy frozen install → TypeScript → ESLint → unit → production build → Chromium-only E2E. Standard `ubuntu-24.04` LTS, Node 24.19.0, pnpm 11.7.0; không paid runner hoặc deployment. Runner được pin để tránh migration tự động của `ubuntu-latest`.
 
-Permissions chỉ `contents: read`; checkout không persist credentials; actions pin bằng commit SHA. Không `pull_request_target`, secrets, DB/service containers hoặc external commercial integration. Concurrency hủy lượt cũ của cùng PR; timeout 20 phút. Artifact `frontend-review-evidence` giữ reports/screenshots/traces trong 7 ngày, kể cả khi test thất bại; có thể tạo lại local sau khi artifact hết hạn.
+Permissions chỉ `contents: read`; checkout không persist credentials; actions pin bằng commit SHA. [pnpm/action-setup v6.1.1](https://raw.githubusercontent.com/pnpm/action-setup/v6.1.1/action.yml) và [upload-artifact v7.0.2](https://raw.githubusercontent.com/actions/upload-artifact/v7.0.2/action.yml) khai báo Node24, không dựa vào runner ép action Node20 deprecated sang Node24. Không `pull_request_target`, secrets, DB/service containers hoặc external commercial integration. Concurrency hủy lượt cũ của cùng PR; timeout 20 phút. Artifact `frontend-review-evidence` giữ reports/screenshots/traces trong 7 ngày, kể cả khi test thất bại; có thể tạo lại local sau khi artifact hết hạn.
 
 CI pass không tự merge và workflow không tự thiết lập required branch protection. Owner có thể cấu hình required check sau khi duyệt; chưa tự thay repository policy.
 
