@@ -57,7 +57,7 @@ Kiến trúc modular monolith; PostgreSQL/Prisma dành cho phase backend tương
 - [Development/testing](./docs/development.md)
 - [Roadmap và phạm vi tương lai](./docs/roadmap.md)
 
-Bằng chứng kiểm thử và hạn chế milestone sẽ được ghi trong `docs/validation.md` sau khi chạy thực tế. Không coi roadmap là feature đã hoàn thành.
+[Bằng chứng kiểm thử và hạn chế milestone](./docs/validation.md) ghi 24 unit tests, 31 browser cases đạt và 1 touch-tilt case skip có chủ đích. Không coi roadmap là feature đã hoàn thành.
 
 ## Giới hạn milestone
 

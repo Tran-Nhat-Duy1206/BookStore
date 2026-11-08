@@ -7,7 +7,8 @@ Bộ tài liệu tiếng Việt cho dự án BookStore chính thức tại `E:\B
 - **Đã duyệt định hướng**: quyết định phạm vi/thiết kế, không đồng nghĩa đã triển khai.
 - **Dự kiến**: chưa có bằng chứng triển khai hoặc nghiệm thu trong bộ tài liệu này.
 - **Đã triển khai/đã kiểm chứng**: chỉ được dùng sau khi đối chiếu mã nguồn và kết quả kiểm tra thực tế; agent điều phối cập nhật bằng chứng riêng.
-- Ảnh bìa, tên sách, giá, tồn kho, ngày phát hành trong demo là fixture minh họa; không phải cam kết kinh doanh.
+- Ảnh bìa, tên sách, tác giả, bài viết và ngày phát hành là fixture minh họa; không phải cam kết kinh doanh. Milestone không có giá bán hoặc tồn kho thật.
+- [Validation](./validation.md) ghi source commit, kết quả chạy thực và giới hạn; roadmap không phải danh sách tính năng đã hoàn thành.
 
 ## Mục lục
 
@@ -23,7 +24,8 @@ Bộ tài liệu tiếng Việt cho dự án BookStore chính thức tại `E:\B
 | [An toàn và dữ liệu](<./security.md>) | Commerce/auth/payment tắt, không credentials |
 | [Hệ thiết kế](<./design-system.md>) | Token màu/chữ thực tế, bố cục và mục tiêu accessibility |
 | [Motion](<./motion.md>) | Hiệu ứng thực tế, reduced motion và ý tưởng chưa triển khai |
-| [Sitemap](<./sitemap.md>) | Route dự kiến và cách ghi nhận triển khai |
+| [Sitemap](<./sitemap.md>) | Route demo hiện có, navigation và commercial boundary |
+| [Validation](<./validation.md>) | Bằng chứng unit/browser/build, source review và hạn chế |
 | [Phát triển và kiểm thử](<./development.md>) | Lệnh dự kiến, ma trận kiểm tra, không kết luận kết quả |
 | [Dependency và môi trường](<./dependencies.md>) | Snapshot phiên bản thực do agent điều phối cung cấp, tương thích và nợ tooling |
 | [Quyết định kiến trúc](<./adrs.md>) | ADR và hệ quả |
