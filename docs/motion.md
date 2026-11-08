@@ -33,14 +33,14 @@ Token CSS không tự liên kết với mọi Motion transition. Menu overlay kh
 - `BookTilt` dùng rotateX/rotateY theo vị trí pointer quanh tâm; phạm vi thông thường **±4° mỗi trục** trong bounding box, perspective 900px.
 - Spring: stiffness 210, damping 25; pointer leave đưa cả hai trục về 0.
 - Chỉ nhận chuyển động khi pointer là mouse, media query `(hover: hover) and (pointer: fine)` đúng và người dùng không bật reduced motion. Không dùng tilt như tương tác bắt buộc trên màn hình cảm ứng.
-- Hover cover bổ sung drop-shadow; desktop book card từ min-width 1024px có lift -3px. Đây là trang trí, không thay liên kết/tên sách có thể focus.
+- Hover cover bổ sung drop-shadow; desktop book card từ min-width 1024px có lift -3px. Outer `article.book-card` sở hữu hover transform; `Reveal` bên trong sở hữu scroll transform, tránh Motion inline style ghi đè CSS elevation. Đây là trang trí, không thay liên kết/tên sách có thể focus.
 
 ## Micro-interactions CSS hiện có
 
 | Tương tác | Hành vi |
 |---|---|
 | Button hover | TranslateY -2px, thay background/foreground |
-| Button active | Scale 0.97 |
+| Button active | Scale 0.97; `.button:hover:active` giữ press feedback ngay cả khi đang hover |
 | Category card hover | TranslateY -4px, shadow và border |
 | Series card hover | TranslateY -3px, shadow |
 | Desktop book card hover | TranslateY -3px |
@@ -55,7 +55,7 @@ CSS reduced-motion tắt animation và duration transition, bỏ các transform 
 - Scroll toàn trang từ y=0 đến 600px được map/clamp vào translateY **0–12px**.
 - Pointer ngang trong hero map thành translateX **-8 đến +8px**, qua spring stiffness 55/damping 20. Pointer leave trở về tâm.
 - Mouse pointer điều khiển x khi không reduced motion; không có tính năng drag, page-turn hay physics kệ sách.
-- CSS tại viewport **≤767px** đặt `.hero-art` transform none; reduced motion cũng đặt transform none. Hook có thể vẫn tồn tại nhưng hiệu ứng transform bị vô hiệu trong hai trường hợp này.
+- CSS tại viewport **≤767px**, `(hover: none)` hoặc `(pointer: coarse)` đặt `.hero-art` transform none; vì vậy touch landscape cũng không parallax. Reduced motion cũng đặt transform none. Hook có thể vẫn tồn tại nhưng hiệu ứng transform bị vô hiệu trong các trường hợp này.
 - Reduced-motion branch của Motion đặt cả x/y về 0; hình minh họa tĩnh và nội dung vẫn có mặt.
 
 ## Menu và cart drawers hiện có

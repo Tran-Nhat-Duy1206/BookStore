@@ -57,7 +57,9 @@ Kiến trúc modular monolith; PostgreSQL/Prisma dành cho phase backend tương
 - [Development/testing](./docs/development.md)
 - [Roadmap và phạm vi tương lai](./docs/roadmap.md)
 
-[Bằng chứng kiểm thử và hạn chế milestone](./docs/validation.md) ghi 24 unit tests, 31 browser cases đạt và 1 touch-tilt case skip có chủ đích. Không coi roadmap là feature đã hoàn thành.
+[Validation milestone ban đầu](./docs/validation.md) giữ bằng chứng lịch sử. [Quality gate PR #1](./docs/quality-gate.md) bổ sung review/rendered evidence, fixes và kết quả mở rộng: 24 unit tests, 56 browser cases đạt, 6 skip có chủ đích theo loại pointer/thiết bị. Không coi roadmap là feature đã hoàn thành.
+
+GitHub Actions chạy frozen install, TypeScript, lint, unit, build và Chromium-only E2E cho PR targeting `main`, với `contents: read`, không deploy/secrets. Xem [PR checks](https://github.com/Tran-Nhat-Duy1206/BookStore/pull/1/checks). Screenshot của 9 trang × 2 layouts nằm trong artifact `frontend-review-evidence` (retention 7 ngày), hoặc tạo lại local theo [development](./docs/development.md).
 
 ## Giới hạn milestone
 

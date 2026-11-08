@@ -6,9 +6,11 @@ import {
   useSyncExternalStore,
   useState,
   useRef,
+  useEffect,
+  useCallback,
   type ReactNode,
 } from "react";
-import { Heart, ShoppingBag, Minus, Plus, Trash2 } from "lucide-react";
+import { Heart, ShoppingBag, Minus, Plus, Trash2, X } from "lucide-react";
 import { books } from "@/modules/catalog/data";
 import { BookCover } from "./book-cover";
 import Link from "next/link";
@@ -94,7 +96,45 @@ export function DemoProvider({ children }: { children: ReactNode }) {
     () => empty,
   );
   const [feedback, setFeedback] = useState({ text: "", sequence: 0 });
+  const feedbackRoot = useRef<HTMLDivElement>(null);
+  const feedbackTrigger = useRef<HTMLElement | null>(null);
+  const dismissFeedback = useCallback(() => {
+    const shouldRestoreFocus = feedbackRoot.current?.contains(
+      document.activeElement,
+    );
+    setFeedback((previous) => ({ ...previous, text: "" }));
+    if (shouldRestoreFocus) {
+      const target = feedbackTrigger.current?.isConnected
+        ? feedbackTrigger.current
+        : document.querySelector<HTMLElement>("main");
+      target?.focus();
+    }
+  }, []);
+  useEffect(() => {
+    if (!feedback.text) return;
+    // Noncritical feedback must not obscure the next keyboard destination.
+    const onOutsideFocus = (event: FocusEvent) => {
+      if (
+        event.target instanceof Node &&
+        !feedbackRoot.current?.contains(event.target)
+      )
+        dismissFeedback();
+    };
+    const timer = window.setTimeout(() => {
+      if (!feedbackRoot.current?.contains(document.activeElement))
+        dismissFeedback();
+    }, 8000);
+    document.addEventListener("focusin", onOutsideFocus);
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener("focusin", onOutsideFocus);
+    };
+  }, [feedback.text, feedback.sequence, dismissFeedback]);
   function notify(text: string, saved: boolean) {
+    feedbackTrigger.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
     setFeedback((previous) => ({
       sequence: previous.sequence + 1,
       text: `${text}${saved ? " Chỉ lưu trên thiết bị này." : " Bộ nhớ trình duyệt không khả dụng; chỉ lưu trong phiên này."}`,
@@ -153,12 +193,25 @@ export function DemoProvider({ children }: { children: ReactNode }) {
     >
       {children}
       <div
+        ref={feedbackRoot}
         className="live-feedback"
-        role="status"
-        aria-live="polite"
-        aria-atomic="true"
+        data-visible={Boolean(feedback.text)}
       >
-        {feedback.text && <span key={feedback.sequence}>{feedback.text}</span>}
+        <div role="status" aria-live="polite" aria-atomic="true">
+          {feedback.text && (
+            <span key={feedback.sequence}>{feedback.text}</span>
+          )}
+        </div>
+        {feedback.text && (
+          <button
+            type="button"
+            className="icon-button feedback-dismiss"
+            aria-label="Đóng thông báo"
+            onClick={dismissFeedback}
+          >
+            <X size={18} aria-hidden="true" />
+          </button>
+        )}
       </div>
     </DemoContext.Provider>
   );

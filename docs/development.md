@@ -1,52 +1,68 @@
-# Phát triển và kiểm thử — hướng dẫn dự kiến
+# Phát triển, kiểm thử và CI
 
-## Phạm vi làm việc
+## Phạm vi
 
-Chỉ làm trong `E:\BookStore`, official project và feature branch được giao. Tài liệu này không yêu cầu tự chạy Git hoặc chuyển nhánh. Không sửa README, dependency/config hoặc source chỉ để làm khớp một tài liệu kế hoạch. Khi khác biệt xuất hiện, báo agent điều phối để xác nhận trạng thái thực.
+Official repository `Tran-Nhat-Duy1206/BookStore`, workspace `E:\BookStore`. Chỉ sửa task được giao, giữ feature branch hiện tại; không merge hoặc bắt đầu Phase 3 khi chưa được phép. Frontend chạy bằng fixtures, không cần database, `.env`, cloud account hoặc commercial credentials.
 
-## Chuẩn bị môi trường
+## Toolchain
 
-Dự kiến Node.js bản tương thích với phiên bản Next đã chọn và pnpm theo phiên bản được dự án pin. **Không giả định version cụ thể hoặc dependency đã cài**; đối chiếu manifest/lockfile/toolchain thật trước khi setup. Không cài Prisma, database hoặc dịch vụ cloud cho demo. Không tạo `.env` có credentials để chạy fixture.
+- Node 24.19.0 là phiên bản local/CI được chọn; pnpm 11.7.0 theo packageManager.
+- Engine range trong manifest cho phép một số Node versions khác; không suy ra tất cả đều đã được kiểm thử.
+- Versions, compatibility và ESLint tooling debt: [dependencies](./dependencies.md).
+- Fonts được package cục bộ; original CSS/SVG covers không phụ thuộc API ảnh bên ngoài.
 
-Sau khi project scaffold và scripts được chủ sở hữu xác nhận, mới thực hiện cài đặt dependency theo lockfile/chính sách dự án. Nếu thiếu script thì báo thiếu; không tuyên bố lệnh chạy được và không tự sửa manifest ngoài nhiệm vụ.
-
-## Lệnh mục tiêu
-
-Các lệnh sau là **kế hoạch giao diện phát triển**, không phải chứng cứ scripts hiện hữu hay kết quả chạy:
-
-```text
+```sh
+pnpm install --frozen-lockfile
 pnpm dev
-pnpm typecheck
-pnpm lint
-pnpm test
+```
+
+Dev server mặc định `http://localhost:3000`. Nếu port bận, dùng URL thực mà server báo, không thay server GUI DSH và không tự deploy.
+
+## Scripts hiện có
+
+| Lệnh | Thực hiện |
+|---|---|
+| `pnpm typecheck` | `next typegen && tsc --noEmit` |
+| `pnpm lint` | ESLint source, test và config |
+| `pnpm test` | Vitest unit fixture/search/domain-projection checks |
+| `pnpm build` | Next production build |
+| `pnpm start` | Chạy build đã có, không phải deploy |
+| `pnpm test:e2e` | Playwright desktop Chromium và mobile/touch Chromium emulation |
+
+Lần đầu cần browser:
+
+```sh
+pnpm exec playwright install --only-shell chromium
 pnpm build
 pnpm test:e2e
 ```
 
-| Lệnh dự kiến | Mục đích | Điều kiện |
-|---|---|---|
-| `pnpm dev` | Dev server để review UI | Scaffold, dependencies và script đã có; dùng URL thật server báo |
-| `pnpm typecheck` | Kiểm tra type không emit | TypeScript/script đã cấu hình |
-| `pnpm lint` | Quy tắc lint của dự án | Lint tool và script đã xác nhận |
-| `pnpm test` | Unit/integration cục bộ | Test runner được chọn và fixtures xác định |
-| `pnpm build` | Production build | Không cần secret/db khi demo được thiết kế đúng |
-| `pnpm test:e2e` | Browser hành trình người dùng | E2E runner/browser và target server sẵn sàng |
+Trên Linux CI dùng `pnpm exec playwright install --with-deps --only-shell chromium` để bổ sung OS dependencies. Không cài Firefox/WebKit vì suite hiện tại không chạy chúng.
 
-Không dùng câu “tests passed”, “build thành công” nếu chưa chạy và ghi nhận kết quả thực. Build thành công cũng không đồng nghĩa E2E, accessibility hay security đã đạt.
+Playwright tự khởi động/dừng production server `127.0.0.1:3100`; port này phải rảnh. `reuseExistingServer: false` tránh vô tình kiểm thử server/source cũ. Test failures không tự retry để che flakiness. Chạy build mới sau mỗi source change trước E2E.
 
-## Ma trận kiểm thử dự kiến
+## Coverage và evidence
 
-- **Type/static:** contract fixture, props, import boundaries, metadata shape.
-- **Domain:** Work/EditionContent nhiều–nhiều; thứ tự Volume; precision ngày; composition không vòng lặp.
-- **UI:** search/filter/reset, unknown slug/not-found, empty state, ảnh fallback, tiêu đề tiếng Việt dài.
-- **State demo:** wishlist/cart local persistence/reset nếu có, invalid data xử lý an toàn; không gọi endpoint thương mại, không reserve stock.
-- **E2E:** home → catalog → product → series; news list → article; releases; wishlist/cart minh họa, CTA disabled và thông báo đúng phạm vi.
-- **Accessibility:** keyboard, focus order, labels, landmarks, reduced motion, contrast, screen reader thủ công, zoom/reflow.
-- **Responsive:** mobile hẹp, tablet, desktop; không horizontal overflow do tên sách/filters.
-- **Security/content:** không secret/PII, không auth/payment thật, sanitize nội dung khi có CMS, fixture badge và ngày trung thực.
-- **Phase 3+:** repository/database, migration/restore, quyền publish và preview isolation.
-- **Phase 4+:** concurrency/reservation, idempotency payment, retry/refund, money/server validation; chưa thuộc demo.
+- `tests/unit/catalog.test.ts`: fixture integrity, relationships và Vietnamese discovery logic.
+- `tests/e2e/storefront.spec.ts`: các hành trình cơ bản, accessibility automation, storage failures, keyboard, reduced motion và link/commercial boundary.
+- `tests/e2e/catalog-params.spec.ts`: URL normalization và filter selection nhất quán.
+- `tests/e2e/quality-gate.spec.ts`: 9 route captures, populated collections/reflow, motion thực và toast focus safety.
+- Screenshot outputs: `test-results/quality-gate/{desktop-chromium|mobile-chromium}/{home,catalog,product,series,news,article,releases,wishlist,cart}.png`.
+- Reports/traces: `playwright-report/`, `test-results/`; đều gitignored, không chứa credentials hoặc dữ liệu khách thật.
 
-## Bàn giao kết quả kiểm chứng
+Visual capture test dùng reduced motion để ảnh ổn định; motion acceptance tests riêng chạy `no-preference` và kiểm tra transform/exit thật. Screenshot capture không tương đương visual-diff regression baseline. Reflow ở CSS viewport 640/320 không phải native browser zoom certification.
 
-Agent điều phối sở hữu báo cáo validation riêng; tài liệu này không tạo/ghi đè báo cáo đó. Mỗi lần chạy cần ghi: ngày giờ, command, môi trường/URL nếu có, exit code, output đáng chú ý, giới hạn/chưa chạy. Lệnh không tồn tại hoặc thất bại phải ghi đúng, không thay bằng dấu tick. Không lưu credentials/PII vào log hoặc ảnh minh chứng.
+## GitHub Actions
+
+Workflow `.github/workflows/quality-gate.yml` chạy khi PR targeting `main` được mở/cập nhật, kể cả Draft PR. Chạy frozen install → TypeScript → ESLint → unit → production build → Chromium-only E2E. Standard `ubuntu-latest`, Node 24.19.0, pnpm 11.7.0; không paid runner hoặc deployment.
+
+Permissions chỉ `contents: read`; checkout không persist credentials; actions pin bằng commit SHA. Không `pull_request_target`, secrets, DB/service containers hoặc external commercial integration. Concurrency hủy lượt cũ của cùng PR; timeout 20 phút. Artifact `frontend-review-evidence` giữ reports/screenshots/traces trong 7 ngày, kể cả khi test thất bại; có thể tạo lại local sau khi artifact hết hạn.
+
+CI pass không tự merge và workflow không tự thiết lập required branch protection. Owner có thể cấu hình required check sau khi duyệt; chưa tự thay repository policy.
+
+## Bằng chứng và giới hạn
+
+- [Validation milestone ban đầu](./validation.md) là snapshot lịch sử, không bao phủ mọi state.
+- [Quality gate PR #1](./quality-gate.md) ghi kết quả review hiện tại, CI run, fixes và GO/NO-GO.
+- Không gọi emulation là thiết bị thật, không khẳng định WCAG certification/CWV từ build hoặc axe.
+- Backend/DB migrations, payment/stock concurrency, POS/offline sync và security review tương ứng vẫn thuộc phase tương lai.

@@ -44,11 +44,15 @@ Button có min-height 46px; icon button mặc định 44×44px, một số wishl
 
 Default/hover/focus-visible/active/disabled hiện được styling; disabled giảm opacity và cursor not-allowed. Dialog menu/cart dùng Radix; các tình huống keyboard, focus return, nội dung dài và xóa item cần được kiểm chứng thực tế. Badge demo/lịch dự kiến không được biến thành thành công giao dịch thật.
 
+### Collection và feedback sau quality review
+
+Populated collection ở viewport ≤370px dùng hai cột: bìa/yêu thích bên trái, nội dung và quantity bên phải. Controls quantity cho phép wrap; không thu nhỏ touch targets để che overflow. Toast có nút đóng 44px, tự hết sau 8 giây nếu không được focus và được dismiss khi focus chuyển sang control khác. Đóng bằng nút trả focus về tác nhân ban đầu nếu còn trong DOM; không giữ overlay che focus ở footer.
+
 ## Motion thực tế
 
 CSS tokens: fast **150ms**, normal **220ms**, overlay **300ms**, editorial **400ms**, easing `cubic-bezier(0.22, 1, 0.36, 1)`. MotionProvider có default riêng **240ms**; cart drawer **220ms**, menu panel **280ms**. Không suy ra mọi overlay dùng đúng token 300ms.
 
-Card lift 2–4px, book tilt ±4°, stagger 40ms; reveal y=10px→0 nhưng **opacity luôn 1**, không giấu nội dung ban đầu. Hero ambient y=0–12px theo scroll và x=±8px theo pointer; CSS vô hiệu transform hero trên mobile ≤767px và reduced motion. Chi tiết, điều kiện và giới hạn ở [Motion](<./motion.md>).
+Card lift 2–4px, book tilt ±4°, stagger 40ms; reveal y=10px→0 nhưng **opacity luôn 1**, không giấu nội dung ban đầu. Hero ambient y=0–12px theo scroll và x=±8px theo pointer; CSS vô hiệu transform hero trên viewport ≤767px, coarse/no-hover pointer (kể cả touch landscape) và reduced motion. Chi tiết, điều kiện và giới hạn ở [Motion](<./motion.md>).
 
 ## Accessibility: mục tiêu và yêu cầu review
 

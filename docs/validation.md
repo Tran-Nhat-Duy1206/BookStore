@@ -1,4 +1,6 @@
-# Frontend Foundation — bằng chứng kiểm chứng
+# Frontend Foundation — bằng chứng kiểm chứng ban đầu
+
+> Snapshot lịch sử tại source `4a99b28`, trước PR #1 quality review. Kết quả suite cũ không bao phủ populated cart reflow hoặc actual hover/press. [Quality gate hiện tại](./quality-gate.md) ghi các gaps được tái hiện, fixes, suite mở rộng và CI; dùng báo cáo mới cùng latest PR checks cho quyết định merge.
 
 ## Phạm vi và source
 

@@ -12,9 +12,16 @@ export default async function Catalog({
 }) {
   const params = await searchParams;
   const q = typeof params.q === "string" ? params.q : "";
-  const category =
-    typeof params.category === "string" ? params.category : "all";
-  const sort = typeof params.sort === "string" ? params.sort : "default";
+  const requestedCategory =
+    typeof params.category === "string" ? params.category.trim() : "all";
+  const category = categories.some((item) => item.id === requestedCategory)
+    ? requestedCategory
+    : "all";
+  const requestedSort =
+    typeof params.sort === "string" ? params.sort.trim() : "default";
+  const sort = ["default", "title", "recent"].includes(requestedSort)
+    ? requestedSort
+    : "default";
   const items = discoverBooks(books, { query: q, category, sort });
   return (
     <div className="container">

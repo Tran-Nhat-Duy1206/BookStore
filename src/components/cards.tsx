@@ -8,29 +8,31 @@ import { WishlistButton } from "./demo-state";
 
 export function BookCard({ book, index = 0 }: { book: Book; index?: number }) {
   return (
-    <Reveal delay={(index % 5) * 0.04} className="book-card">
-      <div className="book-stage">
-        <Link
-          href={`/products/${book.slug}`}
-          className="cover-link"
-          aria-label={`Xem ${book.title}`}
-        >
-          <BookTilt>
-            <BookCover book={book} />
-          </BookTilt>
-        </Link>
-        <WishlistButton id={book.id} label={book.title} />
-        <span className="book-card-label">{book.eyebrow}</span>
-      </div>
-      <div className="book-info">
-        <p className="eyebrow">{book.edition}</p>
-        <h3>
-          <Link href={`/products/${book.slug}`}>{book.title}</Link>
-        </h3>
-        <p>{book.author}</p>
-        <span className="demo-caption">Sách minh họa · Chưa mở bán</span>
-      </div>
-    </Reveal>
+    <article className="book-card">
+      <Reveal delay={(index % 5) * 0.04}>
+        <div className="book-stage">
+          <Link
+            href={`/products/${book.slug}`}
+            className="cover-link"
+            aria-label={`Xem ${book.title}`}
+          >
+            <BookTilt>
+              <BookCover book={book} />
+            </BookTilt>
+          </Link>
+          <WishlistButton id={book.id} label={book.title} />
+          <span className="book-card-label">{book.eyebrow}</span>
+        </div>
+        <div className="book-info">
+          <p className="eyebrow">{book.edition}</p>
+          <h3>
+            <Link href={`/products/${book.slug}`}>{book.title}</Link>
+          </h3>
+          <p>{book.author}</p>
+          <span className="demo-caption">Sách minh họa · Chưa mở bán</span>
+        </div>
+      </Reveal>
+    </article>
   );
 }
 export function BookGrid({ items }: { items: Book[] }) {

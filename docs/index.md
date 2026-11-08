@@ -25,8 +25,9 @@ Bộ tài liệu tiếng Việt cho dự án BookStore chính thức tại `E:\B
 | [Hệ thiết kế](<./design-system.md>) | Token màu/chữ thực tế, bố cục và mục tiêu accessibility |
 | [Motion](<./motion.md>) | Hiệu ứng thực tế, reduced motion và ý tưởng chưa triển khai |
 | [Sitemap](<./sitemap.md>) | Route demo hiện có, navigation và commercial boundary |
-| [Validation](<./validation.md>) | Bằng chứng unit/browser/build, source review và hạn chế |
-| [Phát triển và kiểm thử](<./development.md>) | Lệnh dự kiến, ma trận kiểm tra, không kết luận kết quả |
+| [Validation ban đầu](<./validation.md>) | Snapshot lịch sử của foundation |
+| [Quality gate PR #1](<./quality-gate.md>) | Findings/fixes, CI thực tế, 18 captures, motion acceptance và GO/NO-GO |
+| [Phát triển và kiểm thử](<./development.md>) | Toolchain, scripts thực tế, CI và cách tái tạo evidence |
 | [Dependency và môi trường](<./dependencies.md>) | Snapshot phiên bản thực do agent điều phối cung cấp, tương thích và nợ tooling |
 | [Quyết định kiến trúc](<./adrs.md>) | ADR và hệ quả |
 | [Chi phí tương lai](<./future-costs.md>) | Khoản mục chưa được duyệt chi |
