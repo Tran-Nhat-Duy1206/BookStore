@@ -79,3 +79,12 @@ Trạng thái “chấp nhận định hướng” chỉ nói quyết định th
 ## ADR-010 — Catalog persistence, cardinalities and stable public reads
 
 [Decision record](./adr-010-catalog-persistence.md): Batch3.1 Work-owned Volumes, many-to-many Series membership, ordered EditionContent, owned primary SKU, UUID/public-ID separation, isolated PostgreSQL and explicit source behavior. No auth/admin/commerce approval is implied.
+
+## Batch3.2A security decisions — isolated evaluation only
+
+- [ADR-011: provider and exact versions](./adr-011-authentication-spike-provider.md).
+- [ADR-012: session and MFA admission](./adr-012-staff-session-and-mfa.md).
+- [ADR-013: offline provisioning and Owner recovery](./adr-013-staff-bootstrap-and-owner-recovery.md).
+- [ADR-014: purpose privileges, RBAC and audit/revocation](./adr-014-auth-privileges-rbac-and-audit.md).
+
+These records do not authorize production auth, operational CRUD, a full admin application or deployment.

@@ -2,7 +2,7 @@
 
 ## Approval and baseline
 
-The owner approved the plan after PR #1 merged normally into main at `92644eae77f79613b7be548585789b0d74e25171`. Only Batch 3.1 is authorized for implementation. All later batches require separate approval. This file preserves the approved plan from the conversation; it does not claim that the entire backend/admin system exists.
+The owner approved the plan after PR #1 merged normally into main at `92644eae77f79613b7be548585789b0d74e25171`. Batch3.1 was accepted and merged at `ce8165d8f7f8905378b36728e6c07b04ba20d9e9`. The owner now authorizes **Batch3.2A isolated authentication security spike only**. Full Batch3.2 and later operational batches require separate approval. This file preserves the approved plan from the conversation; it does not claim that the entire backend/admin system exists.
 
 ## Architecture
 
@@ -15,6 +15,7 @@ Approved catalog reconciliation: [ADR-010](./adr-010-catalog-persistence.md). Wo
 | Batch | Scope | Gate |
 |---|---|---|
 | 3.1 — approved | Local isolated PostgreSQL, pinned compatible Prisma, core catalog migrations, idempotent original demo seed, fixture/database read contracts and parity, CI database tests | No auth/admin writes/commerce/deployment; fixture default; public identity/UI compatibility |
+| 3.2A — spike only approved | Isolated Better Auth compatibility, MFA/admission, SQL privilege experiments and security ADRs | No mounted auth routes, operational admin, real identities, deployment or merge; [security plan](./batch-3-2-security-plan.md) |
 | 3.2 — not authorized | Staff authentication, MFA, sessions, deny-by-default RBAC/object authorization and audit | Ship security as one slice before admin mutations; provider choice approved separately |
 | 3.3 — not authorized | Catalog administration for Works, Series, Volumes, Editions, Products/SKUs, taxonomy/contributors/publishers | Valid relationships, stale-edit protection, transactional audit |
 | 3.4 — not authorized | Safe media upload, metadata, derivatives and associations | Allowlisted formats, size/dimension limits, safe storage and rights metadata |
@@ -52,4 +53,4 @@ Staff-only identity: assess the earlier Supabase Auth option against a maintaine
 
 Pricing/promotions, customer identity/privacy, orders/checkout/payment/refunds, suppliers/procurement, reservations/transfers/fulfillment/shipping/returns, notifications, real wishlist/cart/account sync, readers/community/reviews/bookshelves, loyalty and POS/offline/reconciliation remain planned Phase 4/5 features. None is removed or implicitly approved by this batch.
 
-No paid infrastructure, cloud credentials, production deployment or production database activation is authorized. Stop after Batch 3.1 with a Draft PR; do not merge or start Batch 3.2.
+No paid infrastructure, cloud credentials, production deployment or production database activation is authorized. Stop after Batch3.2A with a Draft PR; do not merge or implement full Batch3.2/Batch3.3 without separate approval.

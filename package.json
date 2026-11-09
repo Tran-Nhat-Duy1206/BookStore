@@ -24,7 +24,14 @@
     "db:local:init": "node scripts/local-db.mjs init",
     "db:local:start": "node scripts/local-db.mjs start",
     "db:local:stop": "node scripts/local-db.mjs stop",
-    "db:local:status": "node scripts/local-db.mjs status"
+    "db:local:status": "node scripts/local-db.mjs status",
+    "auth:spike:generate": "prisma generate --schema experiments/auth-spike/schema.prisma",
+    "auth:spike:typecheck": "pnpm db:generate && pnpm auth:spike:generate && tsc --project experiments/auth-spike/tsconfig.json --noEmit",
+    "auth:spike:test": "pnpm db:generate && pnpm auth:spike:generate && vitest run --config experiments/auth-spike/vitest.config.ts",
+    "auth:spike:local:init": "node experiments/auth-spike/local-db.mjs init",
+    "auth:spike:local:start": "node experiments/auth-spike/local-db.mjs start",
+    "auth:spike:local:stop": "node experiments/auth-spike/local-db.mjs stop",
+    "auth:spike:local:status": "node experiments/auth-spike/local-db.mjs status"
   },
   "dependencies": {
     "@fontsource/be-vietnam-pro": "5.3.0",
@@ -42,12 +49,15 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "4.14.0",
+    "@better-auth/prisma-adapter": "1.7.18",
+    "@better-auth/utils": "0.5.1",
     "@playwright/test": "1.65.0",
     "@tailwindcss/postcss": "4.3.5",
     "@types/node": "26.6.6",
     "@types/pg": "8.23.1",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
+    "better-auth": "1.7.18",
     "dotenv": "18.0.9",
     "eslint": "9.39.5",
     "eslint-config-next": "16.4.5",

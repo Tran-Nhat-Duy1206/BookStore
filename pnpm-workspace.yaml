@@ -2,3 +2,8 @@ allowBuilds:
   "@prisma/engines": true
   esbuild: true
   prisma: true
+
+# GHSA-g3hv-75wg-m249: temporary, exact-parent compatibility exception.
+# NOT a global minimatch upgrade; see docs/dependency-audit-remediation.md.
+overrides:
+  "@typescript-eslint/typescript-estree@8.72.1>minimatch": "11.0.5"
