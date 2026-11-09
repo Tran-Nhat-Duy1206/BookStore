@@ -11,7 +11,11 @@ test("padded category URLs keep results and selected controls consistent", async
   await expect(page.getByLabel("Sắp xếp", { exact: true })).toHaveValue(
     "title",
   );
-  await expect(page.locator('.chip[aria-current="true"]')).toHaveText("Manga");
+  // A list assertion retries transient streamed DOM duplication while still
+  // requiring exactly one selected chip with the complete expected text.
+  await expect(page.locator('.chip[aria-current="true"]')).toHaveText([
+    "Manga",
+  ]);
 });
 
 test("unrecognized category and sort safely fall back to matching UI defaults", async ({
@@ -23,5 +27,7 @@ test("unrecognized category and sort safely fall back to matching UI defaults", 
     "default",
   );
   await expect(page.locator(".book-card")).toHaveCount(12);
-  await expect(page.locator('.chip[aria-current="true"]')).toHaveText("Tất cả");
+  await expect(page.locator('.chip[aria-current="true"]')).toHaveText([
+    "Tất cả",
+  ]);
 });

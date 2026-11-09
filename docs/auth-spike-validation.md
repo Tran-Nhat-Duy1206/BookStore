@@ -4,7 +4,7 @@
 
 Baseline main `ce8165d8f7f8905378b36728e6c07b04ba20d9e9`; branch `feat/phase3-b2a-auth-spike`. Only isolated, non-production Better Auth evaluation is authorized. Final commit, Draft PR and exact-HEAD CI run are recorded in the final PR acceptance comment; workflow configuration alone does not establish CI success.
 
-All executable experiments are under [auth-spike](../experiments/auth-spike/README.md). There is no authentication HTTP listener, Next auth route, admin application, customer identity or operational mutation. Application source, three catalog migrations/schema, original scripts/tests and Vietnamese UI/CSS/motion are unchanged. Grep found no experimental/provider imports in source or the built browser chunks; no application route handlers exist. Default fixture behavior is preserved.
+All executable experiments are under [auth-spike](../experiments/auth-spike/README.md). There is no authentication HTTP listener, Next auth route, admin application, customer identity or operational mutation. Application source, three catalog migrations/schema, original scripts, unit/integration tests and Vietnamese UI/CSS/motion are unchanged. One existing catalog-parameter browser assertion was strengthened to an exact one-item text-list check after CI exposed a transient duplicate DOM match; details below. Grep found no experimental/provider imports in source or the built browser chunks; no application route handlers exist. Default fixture behavior is preserved.
 
 ## Exact versions and compatibility
 
@@ -46,12 +46,14 @@ After final local spike tests, bootstrap queries confirmed **0 remaining disposa
 | Production build | PASS |
 | Fixture-mode complete browser suite, catalog DB stopped | **56 PASS,6 intentional pointer/project SKIP** |
 | Database-mode complete browser suite | **56 PASS,6 intentional pointer/project SKIP** |
+| Follow-up exact-chip assertion stress run | **20/20 PASS** (both parameter tests × both projects ×5 independent repetitions) |
+| Follow-up fixture suite / TypeScript / ESLint | **56 PASS,6 intentional SKIP** / PASS / PASS |
 | Existing missing-DB/invalid-source HTTP probes | PASS:500, no fixture fallback/response credential leakage |
 | Independent static source review | No concrete actionable in-scope findings; not runtime/security certification |
 | Production-only dependency audit | No known vulnerabilities reported |
 | **Full dev+runtime dependency audit** | **NONZERO1: one open moderate baseline minimatch finding**, zero high/critical; not waived |
 
-Same62 browser project cases run twice in different modes; not124 unique scenarios. Test assertions were not weakened and existing tests were not edited. Local XML lives in ignored auth-spike-test-results; CI retains independent JUnit evidence for7days. Original mode-specific CI screenshot/report artifacts remain. CI has four checks: existing frontend/catalog jobs, isolated SDK/security tests, and a separate full-graph audit. The audit check has no suppression/continue-on-error and retains actual nonzero findings; passing tests must not be presented as an all-green pipeline or audit clearance.
+Same62 browser project cases run twice in different modes; not124 unique scenarios. Test assertions were not weakened. The only existing-test edit replaces two strict single-element chip text assertions with retrying exact one-item text arrays; count and text requirements remain, with no first()/sleep/retry/skip or timeout change. Local XML lives in ignored auth-spike-test-results; CI retains independent JUnit evidence for7days. Original mode-specific CI screenshot/report artifacts remain. CI has four checks: existing frontend/catalog jobs, isolated SDK/security tests, and a separate full-graph audit. The audit check has no suppression/continue-on-error and retains actual nonzero findings; passing tests must not be presented as an all-green pipeline or audit clearance.
 
 ## Demonstrated authentication/security behavior
 
@@ -73,6 +75,12 @@ Same62 browser project cases run twice in different modes; not124 unique scenari
 Initial run:54passed/17failed. Better Auth defaults origin checking off in test mode; the spike now explicitly sets origin/CSRF checks on, and retains strict foreign-origin rejection. Missing trusted-IP metadata placed independent synthetic clients in one shared per-path limiter bucket; distinct fixture-only IP metadata now models clients while concurrent-budget tests prove limits remain enabled. Two SQL denial checks referenced a nonexistent Product.title; corrected to the actual merchandisingTitle column while retaining SQLSTATE42501 assertions. No security test was removed/relaxed.
 
 Later strengthened runs passed76 then78cases, adding actual handler rate concurrency/account lockout, raw-token DTO projection, unavailable-staff persistence, concurrent backup consumption and trusted-device replay checks. Synthetic IP headers are not a production proxy trust solution. Direct auth.api functions bypass HTTP origin/CSRF/rate controls; they are used only for offline setup or private session lookup in this harness, never as an exposed BFF boundary.
+
+## Initial GitHub browser failure and assertion stabilization
+
+[Initial exact-HEAD run42591749764](https://github.com/Tran-Nhat-Duy1206/BookStore/actions/runs/42591749764) at `bd5255f8fbb5af6735793229ce7435665183f1fe`: auth/security and catalog jobs passed, full audit failed on the known moderate finding, and the fixture frontend job had55pass/6skip/1fail. The mobile padded-category test's strict single-element selector resolved two identical Manga links during streamed DOM/hydration, while its rendered accessibility snapshot showed one selected Manga link. No application code had changed.
+
+The follow-up changes only the two selected-chip text assertions in [catalog parameters](../tests/e2e/catalog-params.spec.ts) to exact one-item arrays. Playwright can retry the complete count-plus-text condition until the DOM settles; a persistent duplicate or wrong selection still fails. No first-element selector, fixed delay, extra retry, skipped assertion, relaxed expected text, animation removal or timeout increase was used. The follow-up local stress run passed20/20 without retries, followed by TypeScript/ESLint PASS and the full fixture suite56pass/6intentional skips. Exact-final-HEAD CI evidence is recorded in the final PR comment.
 
 ## Advisories and residual risks
 
