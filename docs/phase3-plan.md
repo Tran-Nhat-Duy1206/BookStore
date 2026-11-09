@@ -2,7 +2,7 @@
 
 ## Approval and baseline
 
-The owner approved the plan after PR #1 merged normally into main at `92644eae77f79613b7be548585789b0d74e25171`. Batch3.1 was accepted and merged at `ce8165d8f7f8905378b36728e6c07b04ba20d9e9`. The owner now authorizes **Batch3.2A isolated authentication security spike only**. Full Batch3.2 and later operational batches require separate approval. This file preserves the approved plan from the conversation; it does not claim that the entire backend/admin system exists.
+The owner approved the plan after PR #1 merged normally into main at `92644eae77f79613b7be548585789b0d74e25171`. Batch3.1 was accepted and merged at `ce8165d8f7f8905378b36728e6c07b04ba20d9e9`. PR#3's accepted spike and narrow dependency exception merged normally at `62a5c9293b5029a1f78937bb4fcd90f09aea92f7`. The owner now authorizes **Batch3.2B.1 persistence, privileges, authorization kernel, Owner governance and audit foundations only**. Authentication integration and later operational batches require separate approval. This file preserves the approved plan from the conversation; it does not claim that the entire backend/admin system exists.
 
 ## Architecture
 
@@ -12,17 +12,18 @@ Approved catalog reconciliation: [ADR-010](./adr-010-catalog-persistence.md). Wo
 
 ## Delivery batches
 
-| Batch | Scope | Gate |
-|---|---|---|
-| 3.1 — approved | Local isolated PostgreSQL, pinned compatible Prisma, core catalog migrations, idempotent original demo seed, fixture/database read contracts and parity, CI database tests | No auth/admin writes/commerce/deployment; fixture default; public identity/UI compatibility |
-| 3.2A — spike only approved | Isolated Better Auth compatibility, MFA/admission, SQL privilege experiments and security ADRs | No mounted auth routes, operational admin, real identities, deployment or merge; [security plan](./batch-3-2-security-plan.md) |
-| 3.2 — not authorized | Staff authentication, MFA, sessions, deny-by-default RBAC/object authorization and audit | Ship security as one slice before admin mutations; provider choice approved separately |
-| 3.3 — not authorized | Catalog administration for Works, Series, Volumes, Editions, Products/SKUs, taxonomy/contributors/publishers | Valid relationships, stale-edit protection, transactional audit |
-| 3.4 — not authorized | Safe media upload, metadata, derivatives and associations | Allowlisted formats, size/dimension limits, safe storage and rights metadata |
-| 3.5 — not authorized | Editorial revisions, preview, publishing/scheduling, release precision/source/history | Draft isolation, immutable approved revisions, idempotent due-publication and retryable invalidation |
-| 3.6 — not authorized | Homepage sections/banners, brand/localization and truthful storefront settings | Do not invent business contact/address; commerce flags not editable into activation |
-| 3.7 — not authorized | Inventory location/balance/append-only ledger and controlled adjustments | SKU × location, atomic/idempotent audited adjustments; no fabricated real balances |
-| 3.8 — not authorized | Broader public integration, caching, monitoring and restore drill | Regression/accessibility/motion parity and operational acceptance |
+| Batch                              | Scope                                                                                                                                                                      | Gate                                                                                                                        |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| 3.1 — approved                     | Local isolated PostgreSQL, pinned compatible Prisma, core catalog migrations, idempotent original demo seed, fixture/database read contracts and parity, CI database tests | No auth/admin writes/commerce/deployment; fixture default; public identity/UI compatibility                                 |
+| 3.2A — accepted/merged             | Isolated Better Auth compatibility/security spike and scoped minimatch remediation                                                                                         | Experimental evidence, not operational authentication                                                                       |
+| 3.2B.1 — implementation authorized | Canonical additive security persistence, purpose privileges, deny-default kernel, Owner invariants and audit/reconciliation                                                | [ADR-015](./adr-015-security-foundation.md); synthetic disposable tests; no routes, real staff or activation; Draft PR only |
+| 3.2B.2–B.5 — not authorized        | Restricted authentication integration, ceremonies, Vietnamese security interface and integrated acceptance                                                                 | [Reviewed full plan](./batch-3-2b-plan.md); separate approval for each implementation boundary                              |
+| 3.3 — not authorized               | Catalog administration for Works, Series, Volumes, Editions, Products/SKUs, taxonomy/contributors/publishers                                                               | Valid relationships, stale-edit protection, transactional audit                                                             |
+| 3.4 — not authorized               | Safe media upload, metadata, derivatives and associations                                                                                                                  | Allowlisted formats, size/dimension limits, safe storage and rights metadata                                                |
+| 3.5 — not authorized               | Editorial revisions, preview, publishing/scheduling, release precision/source/history                                                                                      | Draft isolation, immutable approved revisions, idempotent due-publication and retryable invalidation                        |
+| 3.6 — not authorized               | Homepage sections/banners, brand/localization and truthful storefront settings                                                                                             | Do not invent business contact/address; commerce flags not editable into activation                                         |
+| 3.7 — not authorized               | Inventory location/balance/append-only ledger and controlled adjustments                                                                                                   | SKU × location, atomic/idempotent audited adjustments; no fabricated real balances                                          |
+| 3.8 — not authorized               | Broader public integration, caching, monitoring and restore drill                                                                                                          | Regression/accessibility/motion parity and operational acceptance                                                           |
 
 Batch 3.1 provides local opt-in catalog read integration for verification, not production database activation. Later integration extends real-content DTOs, scale and publishing behavior; it must not silently substitute fictional data on database failures.
 
@@ -53,4 +54,4 @@ Staff-only identity: assess the earlier Supabase Auth option against a maintaine
 
 Pricing/promotions, customer identity/privacy, orders/checkout/payment/refunds, suppliers/procurement, reservations/transfers/fulfillment/shipping/returns, notifications, real wishlist/cart/account sync, readers/community/reviews/bookshelves, loyalty and POS/offline/reconciliation remain planned Phase 4/5 features. None is removed or implicitly approved by this batch.
 
-No paid infrastructure, cloud credentials, production deployment or production database activation is authorized. Stop after Batch3.2A with a Draft PR; do not merge or implement full Batch3.2/Batch3.3 without separate approval.
+No paid infrastructure, cloud credentials, production deployment or production database activation is authorized. Stop after Batch3.2B.1 with an unmerged Draft PR; do not merge, activate accounts or begin Batch3.2B.2/Batch3.3 without separate approval.

@@ -42,7 +42,7 @@ Trạng thái “chấp nhận định hướng” chỉ nói quyết định th
 
 **Quyết định:** Work/Series/Volume mô tả nội dung; EditionContent nối nội dung vào Edition; Product là trình bày thương mại; SKU là đơn vị định giá/tồn. Omnibus, box và bundle có semantics riêng.
 
-**Hệ quả:** nhiều thực thể hơn nhưng tránh trùng metadata và đếm sai tồn. ISBN không làm khóa tồn kho. Chi tiết: [Mô hình miền](<./domain-model.md>).
+**Hệ quả:** nhiều thực thể hơn nhưng tránh trùng metadata và đếm sai tồn. ISBN không làm khóa tồn kho. Chi tiết: [Mô hình miền](./domain-model.md).
 
 ## ADR-006 — Commerce mặc định tắt
 
@@ -58,7 +58,7 @@ Trạng thái “chấp nhận định hướng” chỉ nói quyết định th
 
 **Quyết định:** precision và certainty tách biệt; không biến tháng/năm thành ngày giả; ngày lịch tách timestamp xuất bản bài.
 
-**Hệ quả:** lọc/sắp xếp phức tạp hơn nhưng trung thực. Đổi lịch giữ audit. Chi tiết: [CMS/releases](<./cms-releases.md>).
+**Hệ quả:** lọc/sắp xếp phức tạp hơn nhưng trung thực. Đổi lịch giữ audit. Chi tiết: [CMS/releases](./cms-releases.md).
 
 ## ADR-008 — Ledger và reservation thay vì sửa số tồn tùy ý
 
@@ -66,7 +66,7 @@ Trạng thái “chấp nhận định hướng” chỉ nói quyết định th
 
 **Quyết định đề xuất:** SKU × location; ledger bất biến, allocation có TTL/idempotency và transaction.
 
-**Hệ quả:** có thể đối soát và chống oversell; phải thiết kế race payment/expiry, commit-vs-shipment và bundle nguyên tử. Chi tiết: [Tồn kho](<./inventory.md>).
+**Hệ quả:** có thể đối soát và chống oversell; phải thiết kế race payment/expiry, commit-vs-shipment và bundle nguyên tử. Chi tiết: [Tồn kho](./inventory.md).
 
 ## ADR-009 — Không chi phí/deploy tự phát
 
@@ -74,7 +74,7 @@ Trạng thái “chấp nhận định hướng” chỉ nói quyết định th
 
 **Quyết định:** không mua domain, cloud, SaaS, API trả phí hoặc deploy nếu chưa được phê duyệt riêng.
 
-**Hệ quả:** thiết kế không gắn chặt nhà cung cấp sớm; kế hoạch chi phí tách ở [Chi phí tương lai](<./future-costs.md>), không trộn thành cam kết kiến trúc đã mua.
+**Hệ quả:** thiết kế không gắn chặt nhà cung cấp sớm; kế hoạch chi phí tách ở [Chi phí tương lai](./future-costs.md), không trộn thành cam kết kiến trúc đã mua.
 
 ## ADR-010 — Catalog persistence, cardinalities and stable public reads
 
@@ -88,3 +88,7 @@ Trạng thái “chấp nhận định hướng” chỉ nói quyết định th
 - [ADR-014: purpose privileges, RBAC and audit/revocation](./adr-014-auth-privileges-rbac-and-audit.md).
 
 These records do not authorize production auth, operational CRUD, a full admin application or deployment.
+
+## ADR-015 — Security foundation implementation
+
+[Foundation contract](./adr-015-security-foundation.md): owner-authorized Batch3.2B.1 only. One canonical additive history, isolated purpose credentials, server-only deny-default kernel, Owner-governance backstops, explicit isolation/time semantics and durable audit/reconciliation. No runtime admission writer, real Owner activation, auth transport/UI or business operations. [Validation](./batch-3-2b1-validation.md) separates actual local checks, exact-HEAD CI and remaining approvals.
