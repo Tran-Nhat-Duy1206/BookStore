@@ -38,6 +38,7 @@ Bộ tài liệu tiếng Việt cho dự án BookStore chính thức tại `E:\B
 | [Privileges/audit ADR-014](<./adr-014-auth-privileges-rbac-and-audit.md>) | Purpose credentials, RBAC and transaction boundaries |
 | [Auth advisories](<./auth-spike-advisories.md>) | Bounded official review and open dependency findings |
 | [Spike evidence](<./auth-spike-validation.md>) | Actual results and limits, not production certification |
+| [Dependency audit remediation](<./dependency-audit-remediation.md>) | Exact affected paths, scoped compatibility exception and validation |
 | [ADR-010 catalog](<./adr-010-catalog-persistence.md>) | Cardinalities, UUID/public IDs, constraints và read contracts |
 | [Catalog database](<./catalog-database.md>) | Isolated local setup, migrations/seed, adapters và CI |
 | [Batch3.1 validation](<./batch-3-1-validation.md>) | Actual local results, limitations và final PR CI evidence |
