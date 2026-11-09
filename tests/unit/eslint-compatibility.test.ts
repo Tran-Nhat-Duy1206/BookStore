@@ -93,7 +93,7 @@ describe("typescript-estree's narrow minimatch consumer", () => {
   it("loads the exact corrected edge without replacing other plugin consumers", () => {
     expect(
       (estreeRequire("minimatch/package.json") as { version: string }).version,
-    ).toBe("11.0.1");
+    ).toBe("11.0.5");
     const reactRequire = createRequire(
       nextRequire.resolve("eslint-plugin-react"),
     );

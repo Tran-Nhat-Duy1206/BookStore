@@ -30,8 +30,9 @@ Versioned baseline raw findings are preserved in the [spike snapshot](../experim
 - [Stable TypeScript-ESLint release](https://github.com/typescript-eslint/typescript-eslint/releases/tag/v8.72.1) and npm metadata: latest8.72.1 still declares minimatch^10.2.2. The advisory reports no patched10 range, and no maintained stable TypeScript-ESLint release adopting11 was found in this bounded review. Canary8.72.2-alpha is not selected.
 - Stable eslint-config-next remains16.4.5, with typescript-eslint^8.56.0. A routine in-range refresh does not resolve the advisory.
 - ESLint10.14.0 exists, but eslint-plugin-react7.37.5 declares peers only through^9.7.0. An unrelated major lint/framework upgrade is not an API-compatible shortcut.
-- [Official v11 package](https://raw.githubusercontent.com/isaacs/minimatch/v11.0.1/package.json) preserves CJS/ESM named exports and supports Node18/20/>=22, including the selected24.19.0. The GitHub release lookup was404, but the tagged official source and npm11.0.1 package metadata exist. Do not infer absence from that release lookup.
-- [v10→v11 comparison](https://github.com/isaacs/minimatch/compare/v10.2.6...v11.0.1): a substantial non-RegExp matcher rewrite, not a universal drop-in guarantee. New runtime matcher dependency and brace-expansion are audited from the actual lockfile.
+- [Current stable v11.0.5 package](https://raw.githubusercontent.com/isaacs/minimatch/v11.0.5/package.json) preserves CJS/ESM named exports and supports Node20/>=22, including selected Node24.19.0 and all declared project engines. The first-fixed11.0.1 GitHub release lookup was404, but its tagged source/npm metadata exist; that lookup is not proof of absence.
+- [v10→v11 comparison](https://github.com/isaacs/minimatch/compare/v10.2.6...v11.0.5): a substantial non-RegExp matcher rewrite, not a universal drop-in guarantee. New runtime matcher dependency and brace-expansion are audited from the actual lockfile.
+- A final registry check found latest stable11.0.5 (published2026-11-05). [Changes after first-fixed11.0.1](https://github.com/isaacs/minimatch/compare/v11.0.1...v11.0.5) include additional preprocessing bounds, caching and numeric-range matching. The first-fixed candidate passed the full local gate, but is superseded by11.0.5 with every required gate repeated; results are not carried over between versions.
 
 ## Selected minimal remediation
 
@@ -39,26 +40,26 @@ A temporary, exact-parent pnpm compatibility exception in [workspace configurati
 
 ```yaml
 overrides:
-  "@typescript-eslint/typescript-estree@8.72.1>minimatch": "11.0.1"
+  "@typescript-eslint/typescript-estree@8.72.1>minimatch": "11.0.5"
 ```
 
 This changes only that package-version dependency edge (across any resolved peer instances), NOT every minimatch consumer. Unrelated3.1.5 consumers, ESLint9.39.5, Next/config16.4.5, TypeScript6.0.3 and all Better Auth/Prisma/pg pins remain. No audit ignore, severity threshold, package exclusion, rule removal, broad override or prerelease.
 
-**Important:**11.0.1 is outside typescript-estree's declared^10.2.2 dependency range. This is a deliberately bounded repository compatibility exception, not an upstream-supported semver update. Keep it only if the exact consumer/API and full regression/audit gates pass. Do not generalize it to other packages/versions.
+**Important:**11.0.5 is outside typescript-estree's declared^10.2.2 dependency range. This is a deliberately bounded repository compatibility exception, not an upstream-supported semver update. Keep it only if the exact consumer/API and full regression/audit gates pass. Do not generalize it to other packages/versions.
 
 ## Consumer and rule compatibility
 
-Source review of the active typescript-estree8.72.1 distribution found only one minimatch use: named CJS `minimatch(relativeFilePath,pattern,{dot:true})` in useProgramFromProjectService. It consumes no class, regex, matcher-internal or makeRe API. Official [v11 source](https://raw.githubusercontent.com/isaacs/minimatch/v11.0.1/src/index.ts) retains that signature/boolean contract and dot option.
+Source review of the active typescript-estree8.72.1 distribution found only one minimatch use: named CJS `minimatch(relativeFilePath,pattern,{dot:true})` in useProgramFromProjectService. It consumes no class, regex, matcher-internal or makeRe API. Official [v11 source](https://raw.githubusercontent.com/isaacs/minimatch/v11.0.5/src/index.ts) retains that signature/boolean contract and dot option.
 
 Normal project ESLint configuration does not enable projectService/allowDefaultProject, so a clean ordinary lint run alone is insufficient evidence. Added [real ESLint compatibility tests](../tests/unit/eslint-compatibility.test.ts) resolve the module from the actual estree dependency context, exercise ordinary/dot/nested/brace/negated patterns on both platform modes, confirm unrelated React consumer version, and execute real typed projectService default-project matching with accepted and rejected virtual files. No ignored invalid-code fixture files or app tsconfig changes are needed.
 
 Seven representative rules across six existing plugin families are exercised without stubs: Next, React, hooks, jsx-a11y, TypeScript explicit-any/unused-vars and import anonymous-default-export; warning-level rules count too. Typed unsafe-call positives/negatives exercise the affected matching branch. Before changing dependencies, the baseline plugin/typed probes passed9/9 (nine other candidate-specific cases were deliberately unselected, not removed from the final suite).
 
-The known caller passes no optimizationLevel2 and its upstream default-project validator rejects `**`; documented exploit preconditions are not present at that call. This narrows observed exposure but does not erase an affected-package audit finding or justify suppressing it. v11 can still differ for unconsumed APIs/pathological patterns. Independent read-only review conditionally accepted the exact exception pending execution gates, not unrestricted semantic equivalence.
+The known caller passes no optimizationLevel2 and its upstream default-project validator rejects `**`; documented exploit preconditions are not present at that call. This narrows observed exposure but does not erase an affected-package audit finding or justify suppressing it. v11 can still differ for unconsumed APIs/pathological patterns. Independent read-only review conditionally accepted the exact exception pending execution gates, not unrestricted semantic equivalence. The11.0.5 delta review confirmed the bounded256-pattern cache is compatible with this consumer's fixed plain options and current-path matching; repeated hit/miss cases exercise reuse. Large numeric-brace ranges and arbitrary glob-language equivalence remain outside this matrix. Upstream currently skips Windows Node22/24 in its own CI, so this project's actual native Windows24 tests and final Ubuntu CI are the relevant platform evidence, not an upstream Windows24 certification.
 
 ## Validation and final decision
 
-All required local gates executed after the change:
+The first-fixed11.0.1 evaluation passed the full local gate. Every required gate was then executed again against the selected current stable11.0.5; the table below records that completed rerun (no results were carried over):
 
 | Check                                                    | Actual result                                                         |
 | -------------------------------------------------------- | --------------------------------------------------------------------- |
@@ -76,7 +77,7 @@ All required local gates executed after the change:
 | Peer dependency check                                    | PASS; does not imply upstream semver endorsement of the exception     |
 | Independent static diff/consumer/test review             | No actionable findings; no independent test execution/certification   |
 
-The same62 browser project cases ran in each mode, not124unique scenarios. Only two package nodes changed in the lockfile: replace minimatch10.2.6 with11.0.1 and add @isaacs/nonrecursive-glob-match1.1.0 (published range^1.0.1); existing brace-expansion5.0.12 is retained. No other dependency versions, root manifest, rule config, workflow/audit policy, application source, catalog migration/schema, auth experiment or existing test changed.
+The same62 browser project cases ran in each mode, not124unique scenarios. Only two package nodes changed in the lockfile: replace minimatch10.2.6 with11.0.5 and add @isaacs/nonrecursive-glob-match1.1.0 (published range^1.1.0); existing brace-expansion5.0.12 is retained. No other dependency versions, root manifest, rule config, workflow/audit policy, application source, catalog migration/schema, auth experiment or existing test changed.
 
 Owned BookStore catalog/auth clusters were stopped in a finally block after validation; no other service/database was used or stopped. Existing ESLint9 support warning and pg8 query-queue deprecation were not suppressed. The original nonzero audit snapshot remains historical evidence.
 
