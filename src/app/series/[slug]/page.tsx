@@ -1,15 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { books, series } from "@/modules/catalog/data";
+import { readCatalog } from "@/modules/catalog/read-catalog";
 import { BookGrid } from "@/components/cards";
-export function generateStaticParams() {
-  return series.map((s) => ({ slug: s.slug }));
-}
 export async function generateMetadata({
   params,
 }: {
   params: Promise<{ slug: string }>;
 }) {
+  const { series } = await readCatalog();
   const { slug } = await params;
   return {
     title:
@@ -21,6 +19,7 @@ export default async function SeriesPage({
 }: {
   params: Promise<{ slug: string }>;
 }) {
+  const { books, series } = await readCatalog();
   const { slug } = await params;
   const item = series.find((s) => s.slug === slug);
   if (!item) notFound();

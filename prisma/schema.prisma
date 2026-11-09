@@ -1,0 +1,248 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum PublicationStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum ContributorRole {
+  AUTHOR
+  TRANSLATOR
+  ILLUSTRATOR
+  EDITOR
+}
+
+// PREPACKED is a distinct physical stock identity, not a virtual bundle.
+// Virtual bundle composition and all commerce operations are deferred.
+enum SkuKind {
+  SINGLE_BOOK
+  PREPACKED
+}
+
+model Work {
+  createdAt    DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime          @default(now()) @updatedAt @db.Timestamptz(3)
+  version      Int               @default(0)
+  id           String            @id @default(uuid()) @db.Uuid
+  publicId     String            @unique
+  slug         String            @unique
+  title        String
+  description  String?
+  status       PublicationStatus @default(DRAFT)
+  isDemo       Boolean           @default(true)
+  volumes      Volume[]
+  series       SeriesWork[]
+  categories   WorkCategory[]
+  contributors WorkContributor[]
+}
+
+model Series {
+  createdAt       DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime          @default(now()) @updatedAt @db.Timestamptz(3)
+  version         Int               @default(0)
+  id              String            @id @default(uuid()) @db.Uuid
+  publicId        String            @unique
+  slug            String            @unique
+  title           String
+  description     String
+  curatedPosition Int               @unique
+  status          PublicationStatus @default(DRAFT)
+  isDemo          Boolean           @default(true)
+  works           SeriesWork[]
+
+  @@index([status, curatedPosition])
+}
+
+model SeriesWork {
+  seriesId  String  @db.Uuid
+  workId    String  @db.Uuid
+  position  Int
+  isPrimary Boolean @default(false)
+  isDemo    Boolean @default(true)
+  series    Series  @relation(fields: [seriesId], references: [id], onDelete: Restrict)
+  work      Work    @relation(fields: [workId], references: [id], onDelete: Restrict)
+  // 002: partial unique index permits at most one isPrimary=true per Work.
+
+  @@id([seriesId, workId])
+  @@unique([seriesId, position])
+  @@index([workId])
+}
+
+model Volume {
+  id        String           @id @default(uuid()) @db.Uuid
+  publicId  String           @unique
+  workId    String           @db.Uuid
+  label     String?
+  sortOrder Int
+  isDemo    Boolean          @default(true)
+  work      Work             @relation(fields: [workId], references: [id], onDelete: Restrict)
+  contents  EditionContent[]
+
+  @@unique([workId, sortOrder])
+}
+
+model Edition {
+  createdAt     DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime             @default(now()) @updatedAt @db.Timestamptz(3)
+  version       Int                  @default(0)
+  id            String               @id @default(uuid()) @db.Uuid
+  publicId      String               @unique
+  editionLabel  String
+  contentLabel  String
+  languageLabel String
+  year          Int?
+  color         String
+  motif         String
+  isbn13        String?              @unique
+  publisherId   String?              @db.Uuid
+  status        PublicationStatus    @default(DRAFT)
+  isDemo        Boolean              @default(true)
+  publisher     Publisher?           @relation(fields: [publisherId], references: [id], onDelete: Restrict)
+  contents      EditionContent[]
+  contributors  EditionContributor[]
+  skus          Sku[]
+  // 002: year, cover theme, nonblank display labels and ISBN-13 checksum CHECKs.
+
+  @@index([publisherId])
+}
+
+model EditionContent {
+  editionId String  @db.Uuid
+  volumeId  String  @db.Uuid
+  position  Int
+  isDemo    Boolean @default(true)
+  edition   Edition @relation(fields: [editionId], references: [id], onDelete: Restrict)
+  volume    Volume  @relation(fields: [volumeId], references: [id], onDelete: Restrict)
+
+  @@id([editionId, volumeId])
+  @@unique([editionId, position])
+  @@index([volumeId])
+}
+
+model Product {
+  createdAt          DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime          @default(now()) @updatedAt @db.Timestamptz(3)
+  version            Int               @default(0)
+  id                 String            @id @default(uuid()) @db.Uuid
+  publicId           String            @unique
+  slug               String            @unique
+  merchandisingTitle String
+  description        String
+  eyebrow            String
+  curatedPosition    Int               @unique
+  status             PublicationStatus @default(DRAFT)
+  primarySkuId       String?           @db.Uuid
+  isDemo             Boolean           @default(true)
+  skus               Sku[]             @relation("ProductSkus")
+  primarySku         Sku?              @relation("PrimarySku", fields: [id, primarySkuId], references: [productId, id], onDelete: Restrict, onUpdate: NoAction)
+  // 002: PUBLISHED requires primarySkuId. Cross-row read eligibility is enforced
+  // by the public projection, not an impossible aggregate CHECK.
+
+  @@index([id, primarySkuId])
+  @@index([status, curatedPosition])
+}
+
+model Sku {
+  id         String    @id @default(uuid()) @db.Uuid
+  publicId   String    @unique
+  code       String    @unique
+  productId  String    @db.Uuid
+  editionId  String?   @db.Uuid
+  kind       SkuKind   @default(SINGLE_BOOK)
+  isDemo     Boolean   @default(true)
+  product    Product   @relation("ProductSkus", fields: [productId], references: [id], onDelete: Restrict)
+  edition    Edition?  @relation(fields: [editionId], references: [id], onDelete: Restrict)
+  primaryFor Product[] @relation("PrimarySku")
+  // No sale-enabled field: catalog identity cannot enable selling.
+  // 002: SINGLE_BOOK requires Edition; PREPACKED must not masquerade as one.
+
+  @@unique([productId, id])
+  @@index([editionId])
+}
+
+model Category {
+  createdAt       DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime       @default(now()) @updatedAt @db.Timestamptz(3)
+  version         Int            @default(0)
+  id              String         @id @default(uuid()) @db.Uuid
+  publicId        String         @unique
+  slug            String         @unique
+  label           String
+  description     String
+  curatedPosition Int            @unique
+  isDemo          Boolean        @default(true)
+  works           WorkCategory[]
+}
+
+model WorkCategory {
+  workId     String   @db.Uuid
+  categoryId String   @db.Uuid
+  rank       Int
+  isDemo     Boolean  @default(true)
+  work       Work     @relation(fields: [workId], references: [id], onDelete: Restrict)
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  // Lowest rank is the primary category used by the public Book projection.
+
+  @@id([workId, categoryId])
+  @@unique([workId, rank])
+  @@index([categoryId])
+}
+
+model Contributor {
+  createdAt DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime             @default(now()) @updatedAt @db.Timestamptz(3)
+  version   Int                  @default(0)
+  id        String               @id @default(uuid()) @db.Uuid
+  publicId  String               @unique
+  name      String
+  isDemo    Boolean              @default(true)
+  works     WorkContributor[]
+  editions  EditionContributor[]
+}
+
+model WorkContributor {
+  workId        String          @db.Uuid
+  contributorId String          @db.Uuid
+  role          ContributorRole
+  position      Int
+  isDemo        Boolean         @default(true)
+  work          Work            @relation(fields: [workId], references: [id], onDelete: Restrict)
+  contributor   Contributor     @relation(fields: [contributorId], references: [id], onDelete: Restrict)
+
+  @@id([workId, contributorId, role])
+  @@unique([workId, role, position])
+  @@index([contributorId])
+}
+
+model EditionContributor {
+  editionId     String          @db.Uuid
+  contributorId String          @db.Uuid
+  role          ContributorRole
+  position      Int
+  isDemo        Boolean         @default(true)
+  edition       Edition         @relation(fields: [editionId], references: [id], onDelete: Restrict)
+  contributor   Contributor     @relation(fields: [contributorId], references: [id], onDelete: Restrict)
+
+  @@id([editionId, contributorId, role])
+  @@unique([editionId, role, position])
+  @@index([contributorId])
+}
+
+model Publisher {
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @default(now()) @updatedAt @db.Timestamptz(3)
+  version   Int       @default(0)
+  id        String    @id @default(uuid()) @db.Uuid
+  publicId  String    @unique
+  name      String
+  isDemo    Boolean   @default(true)
+  editions  Edition[]
+}

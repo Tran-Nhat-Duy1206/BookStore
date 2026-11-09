@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ArrowUpRight, ArrowRight } from "lucide-react";
-import { books, type Book, type Series } from "@/modules/catalog/data";
+import type { Book, Series } from "@/modules/catalog/contracts";
 import type { Article, Release } from "@/modules/editorial/data";
 import { BookCover } from "./book-cover";
 import { BookTilt, Reveal } from "./motion";
@@ -70,7 +70,7 @@ export function SectionHeading({
     </div>
   );
 }
-export function SeriesCard({ item }: { item: Series }) {
+export function SeriesCard({ item, books }: { item: Series; books: Book[] }) {
   const volumes = books.filter((b) => item.bookIds.includes(b.id));
   return (
     <Link className="series-card" href={`/series/${item.slug}`}>

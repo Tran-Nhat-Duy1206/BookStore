@@ -9,7 +9,7 @@ import {
   Coffee,
   Orbit,
 } from "lucide-react";
-import { books, categories, series } from "@/modules/catalog/data";
+import { readCatalog } from "@/modules/catalog/read-catalog";
 import { articles, releases } from "@/modules/editorial/data";
 import { BookCover } from "@/components/book-cover";
 import {
@@ -21,7 +21,8 @@ import {
 } from "@/components/cards";
 import { AmbientArt, BookTilt, Reveal } from "@/components/motion";
 const categoryIcons = [Feather, Sparkles, Coffee, BookOpen, Orbit, Flower2];
-export default function Home() {
+export default async function Home() {
+  const { books, categories, series } = await readCatalog();
   return (
     <>
       <section className="hero container">
@@ -69,14 +70,10 @@ export default function Home() {
             ✧
           </span>
           <div className="hero-book hero-book-back">
-            <BookTilt>
-              <BookCover book={books[1]} />
-            </BookTilt>
+            <BookTilt>{books[1] && <BookCover book={books[1]} />}</BookTilt>
           </div>
           <div className="hero-book hero-book-front">
-            <BookTilt>
-              <BookCover book={books[0]} />
-            </BookTilt>
+            <BookTilt>{books[0] && <BookCover book={books[0]} />}</BookTilt>
           </div>
           <div className="hero-shelf" />
           <div className="hero-sticker">
@@ -134,7 +131,9 @@ export default function Home() {
           href="/catalog"
           linkText="Xem cả kệ sách"
         />
-        <BookGrid items={[books[0], books[1], books[7], books[4]]} />
+        <BookGrid
+          items={[books[0], books[1], books[7], books[4]].filter(Boolean)}
+        />
       </section>
       <section className="reading-note">
         <Reveal className="container reading-note-inner">
@@ -170,7 +169,7 @@ export default function Home() {
         />
         <div className="series-grid">
           {series.map((item) => (
-            <SeriesCard item={item} key={item.id} />
+            <SeriesCard item={item} books={books} key={item.id} />
           ))}
         </div>
       </section>
@@ -187,7 +186,8 @@ export default function Home() {
         </p>
         <div className="home-releases">
           {releases.slice(0, 3).map((release) => {
-            const book = books.find((b) => b.id === release.bookId)!;
+            const book = books.find((b) => b.id === release.bookId);
+            if (!book) return null;
             return (
               <Link
                 href={`/products/${book.slug}`}

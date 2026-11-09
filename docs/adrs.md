@@ -30,7 +30,7 @@ Trạng thái “chấp nhận định hướng” chỉ nói quyết định th
 
 ## ADR-004 — PostgreSQL và Prisma tương lai
 
-**Trạng thái:** PostgreSQL là định hướng backend; Prisma là **khuyến nghị chưa chốt triển khai/chưa cài ở milestone này**.
+**Trạng thái:** owner đã duyệt PostgreSQL/Prisma cho Batch3.1 local catalog foundation. Pinned Prisma7.10.1; không production database activation. [ADR-010](./adr-010-catalog-persistence.md) chốt schema/read compatibility trước migrations.
 
 **Quyết định đề xuất:** đánh giá Prisma cho schema/migration/type-safe access khi Phase 3 bắt đầu; so sánh với SQL/query builder nếu transaction/query cần kiểm soát hơn.
 
@@ -75,3 +75,7 @@ Trạng thái “chấp nhận định hướng” chỉ nói quyết định th
 **Quyết định:** không mua domain, cloud, SaaS, API trả phí hoặc deploy nếu chưa được phê duyệt riêng.
 
 **Hệ quả:** thiết kế không gắn chặt nhà cung cấp sớm; kế hoạch chi phí tách ở [Chi phí tương lai](<./future-costs.md>), không trộn thành cam kết kiến trúc đã mua.
+
+## ADR-010 — Catalog persistence, cardinalities and stable public reads
+
+[Decision record](./adr-010-catalog-persistence.md): Batch3.1 Work-owned Volumes, many-to-many Series membership, ordered EditionContent, owned primary SKU, UUID/public-ID separation, isolated PostgreSQL and explicit source behavior. No auth/admin/commerce approval is implied.

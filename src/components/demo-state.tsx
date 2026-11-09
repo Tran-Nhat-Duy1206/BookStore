@@ -11,7 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import { Heart, ShoppingBag, Minus, Plus, Trash2, X } from "lucide-react";
-import { books } from "@/modules/catalog/data";
+import type { Book } from "@/modules/catalog/contracts";
 import { BookCover } from "./book-cover";
 import Link from "next/link";
 
@@ -22,7 +22,7 @@ let current = empty;
 const subscribers = new Set<() => void>();
 let loaded = false;
 let storageAvailable = true;
-function load(force = false) {
+function load(books: Book[], force = false) {
   if ((loaded && !force) || !storageAvailable) return;
   loaded = true;
   let stored: string | null;
@@ -56,21 +56,20 @@ function load(force = false) {
     current = empty;
   }
 }
-function syncStorage(event: StorageEvent) {
-  if (event.key === storageKey || event.key === null) {
-    load(true);
-    subscribers.forEach((fn) => fn());
-  }
-}
-function subscribe(callback: () => void) {
-  if (subscribers.size === 0) window.addEventListener("storage", syncStorage);
+function subscribe(callback: () => void, books: Book[]) {
+  const syncStorage = (event: StorageEvent) => {
+    if (event.key === storageKey || event.key === null) {
+      load(books, true);
+      subscribers.forEach((fn) => fn());
+    }
+  };
+  window.addEventListener("storage", syncStorage);
   subscribers.add(callback);
-  load();
+  load(books);
   callback();
   return () => {
     subscribers.delete(callback);
-    if (subscribers.size === 0)
-      window.removeEventListener("storage", syncStorage);
+    window.removeEventListener("storage", syncStorage);
   };
 }
 function update(value: Snapshot) {
@@ -84,14 +83,25 @@ function update(value: Snapshot) {
   return storageAvailable;
 }
 const DemoContext = createContext<{
+  books: Book[];
   state: Snapshot;
   toggle: (id: string) => void;
   add: (id: string) => void;
   quantity: (id: string, count: number) => void;
 } | null>(null);
-export function DemoProvider({ children }: { children: ReactNode }) {
+export function DemoProvider({
+  children,
+  books,
+}: {
+  children: ReactNode;
+  books: Book[];
+}) {
+  const subscribeToCatalog = useCallback(
+    (callback: () => void) => subscribe(callback, books),
+    [books],
+  );
   const state = useSyncExternalStore(
-    subscribe,
+    subscribeToCatalog,
     () => current,
     () => empty,
   );
@@ -143,11 +153,12 @@ export function DemoProvider({ children }: { children: ReactNode }) {
   return (
     <DemoContext.Provider
       value={{
+        books,
         state,
         toggle(id) {
           const book = books.find((b) => b.id === id);
           if (!book) return;
-          load(true);
+          load(books, true);
           const exists = current.wishlist.includes(id);
           const saved = update({
             ...current,
@@ -163,7 +174,7 @@ export function DemoProvider({ children }: { children: ReactNode }) {
         add(id) {
           const book = books.find((b) => b.id === id);
           if (!book) return;
-          load(true);
+          load(books, true);
           const amount = Math.min((current.cart[id] || 0) + 1, 9);
           const saved = update({
             ...current,
@@ -177,7 +188,7 @@ export function DemoProvider({ children }: { children: ReactNode }) {
         quantity(id, count) {
           const book = books.find((b) => b.id === id);
           if (!book || !Number.isInteger(count)) return;
-          load(true);
+          load(books, true);
           const cart = { ...current.cart };
           if (count <= 0) delete cart[id];
           else cart[id] = Math.min(count, 9);
@@ -265,7 +276,7 @@ export function AddToCart({ id }: { id: string }) {
   );
 }
 export function DemoCollection({ mode }: { mode: "wishlist" | "cart" }) {
-  const { state, quantity } = useDemo();
+  const { books, state, quantity } = useDemo();
   const root = useRef<HTMLDivElement>(null);
   const selected = books.filter((b) =>
     mode === "wishlist"

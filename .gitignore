@@ -4,8 +4,11 @@ out/
 coverage/
 playwright-report/
 test-results/
+database-test-results/
 .env*
 !.env.example
 *.log
 *.tsbuildinfo
 .DS_Store
+.local/
+src/generated/prisma/

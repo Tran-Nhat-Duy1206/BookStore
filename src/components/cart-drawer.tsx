@@ -5,11 +5,10 @@ import Link from "next/link";
 import * as Dialog from "@radix-ui/react-dialog";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Minus, Plus, ShoppingBag, Trash2, X } from "lucide-react";
-import { books } from "@/modules/catalog/data";
 import { useDemo } from "./demo-state";
 
 export function CartDrawer() {
-  const { state, quantity } = useDemo();
+  const { books, state, quantity } = useDemo();
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const pendingRemovalIndex = useRef<number | null>(null);

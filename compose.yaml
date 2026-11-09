@@ -1,0 +1,24 @@
+name: bookstore-catalog-batch31
+services:
+  catalog-db:
+    image: postgres:18.3-alpine
+    environment:
+      POSTGRES_USER: bookstore_catalog
+      POSTGRES_PASSWORD: ${BOOKSTORE_POSTGRES_PASSWORD:?Set a local-only password in .env.local}
+      POSTGRES_DB: bookstore_catalog_dev
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - catalog-data:/var/lib/postgresql
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U bookstore_catalog -d bookstore_catalog_dev",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+volumes:
+  catalog-data:
+    name: bookstore-catalog-batch31-pg18

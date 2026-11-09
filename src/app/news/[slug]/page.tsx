@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { articles } from "@/modules/editorial/data";
-import { books } from "@/modules/catalog/data";
+import { readCatalog } from "@/modules/catalog/read-catalog";
 import { BookGrid, SectionHeading } from "@/components/cards";
 import { site } from "@/config/site";
 export function generateStaticParams() {
@@ -24,6 +24,7 @@ export default async function ArticlePage({
 }: {
   params: Promise<{ slug: string }>;
 }) {
+  const { books } = await readCatalog();
   const { slug } = await params;
   const article = articles.find((a) => a.slug === slug);
   if (!article) notFound();

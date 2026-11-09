@@ -13,7 +13,7 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-Mở `http://localhost:3000`. Không cần database, environment file, payment credentials hoặc cloud account. Font được đóng gói cục bộ qua Fontsource, không gọi Google Fonts runtime/build.
+Mở `http://localhost:3000`. `DATA_SOURCE=fixture` là mặc định: không cần database, environment file, payment credentials hoặc cloud account. Font được đóng gói cục bộ qua Fontsource, không gọi Google Fonts runtime/build.
 
 ```sh
 pnpm typecheck
@@ -45,7 +45,22 @@ Không triển khai checkout, customer authentication, API tạo đơn/payment, 
 
 Brand/localization ở `src/config/site.ts`: mặc định `vi-VN`, `VND`, `Asia/Ho_Chi_Minh`; không phải giới hạn kinh doanh vĩnh viễn. Fictional fixtures ở `src/modules/catalog/` và `src/modules/editorial/`. Product DTO hiện là projection frontend nhẹ, **không phải schema database cuối**.
 
-Kiến trúc modular monolith; PostgreSQL/Prisma dành cho phase backend tương lai, chưa cài/provision. Tách Work/Volume/Edition/SKU và tồn theo SKU × location trong thiết kế.
+Kiến trúc modular monolith. Batch3.1 thêm PostgreSQL/Prisma7.10.1 cho **local catalog read foundation**, không production activation. [ADR-010](./docs/adr-010-catalog-persistence.md) chốt Series/Work/Volume/Edition/Product/SKU, public IDs và invariants; inventory operations vẫn tương lai.
+
+## Local catalog database — Batch3.1
+
+[Hướng dẫn local/CI](./docs/catalog-database.md) có native helper hoặc Docker Compose, dedicated loopback ports55432/55433, migrations, seed và source selection. Không dùng database/port5432 của project khác.
+
+```sh
+pnpm db:local:init
+pnpm db:local:start
+pnpm db:migrate
+pnpm db:seed
+pnpm test:db
+pnpm db:local:stop
+```
+
+Fixture/database adapters trả cùng public DTOs và giữ IDs/URLs/local collections. Database mode opt-in không fallback khi lỗi; unknown/draft metadata không bị bịa thành dữ liệu công khai. Scripts build/typecheck tự generate Prisma client, không yêu cầu DB connection. Xem [Batch3.1 validation](./docs/batch-3-1-validation.md).
 
 ## Tài liệu và trạng thái
 
@@ -59,8 +74,8 @@ Kiến trúc modular monolith; PostgreSQL/Prisma dành cho phase backend tương
 
 [Validation milestone ban đầu](./docs/validation.md) giữ bằng chứng lịch sử. [Quality gate PR #1](./docs/quality-gate.md) bổ sung review/rendered evidence, fixes và kết quả mở rộng: 24 unit tests, 56 browser cases đạt, 6 skip có chủ đích theo loại pointer/thiết bị. Không coi roadmap là feature đã hoàn thành.
 
-GitHub Actions chạy frozen install, TypeScript, lint, unit, build và Chromium-only E2E cho PR targeting `main`, với `contents: read`, không deploy/secrets. Xem [PR checks](https://github.com/Tran-Nhat-Duy1206/BookStore/pull/1/checks). Screenshot của 9 trang × 2 layouts nằm trong artifact `frontend-review-evidence` (retention 7 ngày), hoặc tạo lại local theo [development](./docs/development.md).
+GitHub Actions chạy frozen install, TypeScript, lint, unit, build và Chromium-only E2E cho PR targeting `main`, với `contents: read`, không deploy/secrets. Thêm job PostgreSQL riêng cho migrations/parity và database-mode E2E; [workflow runs](https://github.com/Tran-Nhat-Duy1206/BookStore/actions/workflows/quality-gate.yml) ghi actual checks của từng PR. Screenshot của 9 trang × 2 layouts nằm trong artifact `frontend-review-evidence` (retention 7 ngày), hoặc tạo lại local theo [development](./docs/development.md).
 
 ## Giới hạn milestone
 
-Light mode, fixture data và local browser persistence. Chưa có backend/admin, SEO production/indexing (demo mặc định `noindex`), tài khoản đồng bộ, commerce, POS hoặc deployment. Không triển khai paid services. Chỉ merge khi owner phê duyệt PR; không tự mở milestone tiếp theo.
+Light mode, dữ liệu demo và local browser persistence. Có local catalog database/read foundation; chưa có staff/customer auth, admin mutations, CMS persistence, inventory operations, SEO production/indexing (vẫn `noindex`), tài khoản đồng bộ, commerce, POS hoặc deployment. Không triển khai paid services. Chỉ merge khi owner phê duyệt PR; không tự mở milestone tiếp theo.

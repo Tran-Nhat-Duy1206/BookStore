@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Search, ArrowRight } from "lucide-react";
-import { books, categories } from "@/modules/catalog/data";
+import { readCatalog } from "@/modules/catalog/read-catalog";
 import { discoverBooks } from "@/modules/catalog/search";
 import { BookGrid } from "@/components/cards";
 export const metadata = { title: "Kệ sách minh họa" };
@@ -10,6 +10,7 @@ export default async function Catalog({
 }: {
   searchParams: Promise<Params>;
 }) {
+  const { books, categories } = await readCatalog();
   const params = await searchParams;
   const q = typeof params.q === "string" ? params.q : "";
   const requestedCategory =
