@@ -17,7 +17,7 @@
     "test:e2e": "playwright test",
     "test:db": "vitest run --config vitest.integration.config.ts",
     "test:source-failure": "tsx scripts/source-failure-smoke.ts",
-    "db:generate": "prisma generate",
+    "db:generate": "prisma generate && prisma generate --config prisma.security.config.ts",
     "db:migrate": "tsx scripts/database.ts migrate",
     "db:status": "tsx scripts/database.ts status",
     "db:seed": "tsx prisma/seed.ts",
@@ -31,7 +31,14 @@
     "auth:spike:local:init": "node experiments/auth-spike/local-db.mjs init",
     "auth:spike:local:start": "node experiments/auth-spike/local-db.mjs start",
     "auth:spike:local:stop": "node experiments/auth-spike/local-db.mjs stop",
-    "auth:spike:local:status": "node experiments/auth-spike/local-db.mjs status"
+    "auth:spike:local:status": "node experiments/auth-spike/local-db.mjs status",
+    "security:generate": "prisma generate --config prisma.security.config.ts",
+    "security:test": "pnpm db:generate && vitest run --config vitest.security.config.ts",
+    "security:migrate": "tsx scripts/security-database.ts deploy",
+    "security:local:init": "node scripts/security-local-db.mjs init",
+    "security:local:start": "node scripts/security-local-db.mjs start",
+    "security:local:stop": "node scripts/security-local-db.mjs stop",
+    "security:local:status": "node scripts/security-local-db.mjs status"
   },
   "dependencies": {
     "@fontsource/be-vietnam-pro": "5.3.0",

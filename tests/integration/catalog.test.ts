@@ -89,6 +89,8 @@ describe("isolated catalog migrations and seed", () => {
       "001_catalog_base",
       "002_catalog_invariants",
       "003_catalog_identity_checks",
+      "004_security_identity",
+      "005_security_foundation",
     ]);
     const tables = await sql.query(
       "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename <> '_prisma_migrations' ORDER BY tablename",
@@ -179,6 +181,8 @@ describe("isolated catalog migrations and seed", () => {
         "001_catalog_base",
         "002_catalog_invariants",
         "003_catalog_identity_checks",
+        "004_security_identity",
+        "005_security_foundation",
       ]);
       expect(await read.getSnapshot()).toStrictEqual(before);
       expect(before).toStrictEqual(fixture);

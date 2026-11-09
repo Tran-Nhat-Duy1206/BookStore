@@ -12,5 +12,7 @@ database-test-results/
 .DS_Store
 .local/
 src/generated/prisma/
+src/generated/security/
+security-test-results/
 experiments/auth-spike/generated/
 auth-spike-test-results/
