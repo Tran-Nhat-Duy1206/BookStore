@@ -10,6 +10,8 @@ export default defineConfig([
     "test-results/**",
     "next-env.d.ts",
     "src/generated/**",
+    "experiments/auth-spike/generated/**",
+    "auth-spike-test-results/**",
     ".local/**",
   ]),
 ]);

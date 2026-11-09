@@ -30,7 +30,14 @@ Bộ tài liệu tiếng Việt cho dự án BookStore chính thức tại `E:\B
 | [Phát triển và kiểm thử](<./development.md>) | Toolchain, scripts thực tế, CI và cách tái tạo evidence |
 | [Dependency và môi trường](<./dependencies.md>) | Snapshot phiên bản thực do agent điều phối cung cấp, tương thích và nợ tooling |
 | [Quyết định kiến trúc](<./adrs.md>) | ADR và hệ quả |
-| [Phase3 plan](<./phase3-plan.md>) | Approved plan; chỉ Batch3.1 được phép triển khai |
+| [Phase3 plan](<./phase3-plan.md>) | Batch3.1 accepted; Batch3.2A isolated spike only approved |
+| [Staff security plan](<./batch-3-2-security-plan.md>) | Proposed full boundary; no operational authorization |
+| [Auth spike ADR-011](<./adr-011-authentication-spike-provider.md>) | Exact provider/version and isolated evaluation scope |
+| [Session/MFA ADR-012](<./adr-012-staff-session-and-mfa.md>) | Admission, expiration and recovery restrictions |
+| [Owner recovery ADR-013](<./adr-013-staff-bootstrap-and-owner-recovery.md>) | Offline bootstrap, single Owner and recovery approval |
+| [Privileges/audit ADR-014](<./adr-014-auth-privileges-rbac-and-audit.md>) | Purpose credentials, RBAC and transaction boundaries |
+| [Auth advisories](<./auth-spike-advisories.md>) | Bounded official review and open dependency findings |
+| [Spike evidence](<./auth-spike-validation.md>) | Actual results and limits, not production certification |
 | [ADR-010 catalog](<./adr-010-catalog-persistence.md>) | Cardinalities, UUID/public IDs, constraints và read contracts |
 | [Catalog database](<./catalog-database.md>) | Isolated local setup, migrations/seed, adapters và CI |
 | [Batch3.1 validation](<./batch-3-1-validation.md>) | Actual local results, limitations và final PR CI evidence |

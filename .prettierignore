@@ -3,6 +3,8 @@
 node_modules/
 .next/
 src/generated/
+experiments/auth-spike/generated/
+auth-spike-test-results/
 playwright-report/
 test-results/
 database-test-results/
