@@ -2,7 +2,7 @@
 
 ## Phạm vi
 
-Official repository `Tran-Nhat-Duy1206/BookStore`, workspace `E:\BookStore`. Chỉ sửa task được giao, giữ feature branch hiện tại; không merge hoặc bắt đầu Phase 3 khi chưa được phép. Frontend chạy bằng fixtures, không cần database, `.env`, cloud account hoặc commercial credentials.
+Official repository `Tran-Nhat-Duy1206/BookStore`, workspace `E:\BookStore`. Chỉ Batch3.1 được owner duyệt; giữ feature branch, không merge hoặc bắt đầu Batch3.2. Fixture mode mặc định không cần database/environment/cloud credentials. [Catalog database guide](./catalog-database.md) hướng dẫn local opt-in, migration/seed, disposable tests và database-mode browser checks.
 
 ## Toolchain
 
@@ -22,12 +22,14 @@ Dev server mặc định `http://localhost:3000`. Nếu port bận, dùng URL th
 
 | Lệnh | Thực hiện |
 |---|---|
-| `pnpm typecheck` | `next typegen && tsc --noEmit` |
+| `pnpm typecheck` | Generate Prisma client không DB → Next typegen → tsc |
 | `pnpm lint` | ESLint source, test và config |
 | `pnpm test` | Vitest unit fixture/search/domain-projection checks |
-| `pnpm build` | Next production build |
+| `pnpm build` | Generate Prisma client không DB → Next production build |
 | `pnpm start` | Chạy build đã có, không phải deploy |
 | `pnpm test:e2e` | Playwright desktop Chromium và mobile/touch Chromium emulation |
+| `pnpm test:db` | Isolated PostgreSQL migration/seed/constraints/read parity |
+| `pnpm test:source-failure` | Bounded owned HTTP servers: missing DB/invalid source must fail, never return fixture content |
 
 Lần đầu cần browser:
 
@@ -56,7 +58,7 @@ Visual capture test dùng reduced motion để ảnh ổn định; motion accept
 
 Workflow `.github/workflows/quality-gate.yml` chạy khi PR targeting `main` được mở/cập nhật, kể cả Draft PR. Chạy frozen install → TypeScript → ESLint → unit → production build → Chromium-only E2E. Standard `ubuntu-24.04` LTS, Node 24.19.0, pnpm 11.7.0; không paid runner hoặc deployment. Runner được pin để tránh migration tự động của `ubuntu-latest`.
 
-Permissions chỉ `contents: read`; checkout không persist credentials; actions pin bằng commit SHA. [pnpm/action-setup v6.1.1](https://raw.githubusercontent.com/pnpm/action-setup/v6.1.1/action.yml) và [upload-artifact v7.0.2](https://raw.githubusercontent.com/actions/upload-artifact/v7.0.2/action.yml) khai báo Node24, không dựa vào runner ép action Node20 deprecated sang Node24. Không `pull_request_target`, secrets, DB/service containers hoặc external commercial integration. Concurrency hủy lượt cũ của cùng PR; timeout 20 phút. Artifact `frontend-review-evidence` giữ reports/screenshots/traces trong 7 ngày, kể cả khi test thất bại; có thể tạo lại local sau khi artifact hết hạn.
+Permissions chỉ `contents: read`; checkout không persist credentials; actions pin bằng commit SHA. [pnpm/action-setup v6.1.1](https://raw.githubusercontent.com/pnpm/action-setup/v6.1.1/action.yml) và [upload-artifact v7.0.2](https://raw.githubusercontent.com/actions/upload-artifact/v7.0.2/action.yml) khai báo Node24, không dựa vào runner ép action Node20 deprecated sang Node24. Không `pull_request_target`, production/cloud secrets hoặc external commercial integration. Job frontend không DB; job catalog-database dùng riêng disposable PostgreSQL18 service trên55433 với credentials chỉ dùng cho runner tạm thời. Concurrency hủy lượt cũ của cùng PR; timeout 20 phút. Artifact `frontend-review-evidence` giữ reports/screenshots/traces trong 7 ngày, kể cả khi test thất bại; có thể tạo lại local sau khi artifact hết hạn.
 
 CI pass không tự merge và workflow không tự thiết lập required branch protection. Owner có thể cấu hình required check sau khi duyệt; chưa tự thay repository policy.
 
@@ -65,4 +67,4 @@ CI pass không tự merge và workflow không tự thiết lập required branch
 - [Validation milestone ban đầu](./validation.md) là snapshot lịch sử, không bao phủ mọi state.
 - [Quality gate PR #1](./quality-gate.md) ghi kết quả review hiện tại, CI run, fixes và GO/NO-GO.
 - Không gọi emulation là thiết bị thật, không khẳng định WCAG certification/CWV từ build hoặc axe.
-- Backend/DB migrations, payment/stock concurrency, POS/offline sync và security review tương ứng vẫn thuộc phase tương lai.
+- [Batch3.1 validation](./batch-3-1-validation.md) ghi catalog migration/read evidence hiện tại; auth/admin/CMS/stock/payment/POS và production operations vẫn chưa triển khai.

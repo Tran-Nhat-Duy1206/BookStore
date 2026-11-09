@@ -12,6 +12,11 @@ import { Header, Footer } from "@/components/shell";
 import { DemoProvider } from "@/components/demo-state";
 import { MotionProvider } from "@/components/motion";
 import { site } from "@/config/site";
+import { readCatalog } from "@/modules/catalog/read-catalog";
+
+// Source selection is runtime-explicit. Never serve fixture-prerendered HTML
+// after a local server is restarted in database mode (including DB failures).
+export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: {
@@ -22,9 +27,10 @@ export const metadata: Metadata = {
     "Không gian bookstore minh họa: khám phá sách hư cấu, bộ truyện và chuyện sau những trang sách. Chưa mở bán.",
   robots: { index: false, follow: false },
 };
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  const { books } = await readCatalog();
   return (
     <html lang={site.locale}>
       <body>
@@ -32,7 +38,7 @@ export default function RootLayout({
           Bỏ qua đến nội dung
         </a>
         <MotionProvider>
-          <DemoProvider>
+          <DemoProvider books={books}>
             <Header />
             <main id="main-content" tabIndex={-1}>
               {children}

@@ -30,6 +30,10 @@ Bộ tài liệu tiếng Việt cho dự án BookStore chính thức tại `E:\B
 | [Phát triển và kiểm thử](<./development.md>) | Toolchain, scripts thực tế, CI và cách tái tạo evidence |
 | [Dependency và môi trường](<./dependencies.md>) | Snapshot phiên bản thực do agent điều phối cung cấp, tương thích và nợ tooling |
 | [Quyết định kiến trúc](<./adrs.md>) | ADR và hệ quả |
+| [Phase3 plan](<./phase3-plan.md>) | Approved plan; chỉ Batch3.1 được phép triển khai |
+| [ADR-010 catalog](<./adr-010-catalog-persistence.md>) | Cardinalities, UUID/public IDs, constraints và read contracts |
+| [Catalog database](<./catalog-database.md>) | Isolated local setup, migrations/seed, adapters và CI |
+| [Batch3.1 validation](<./batch-3-1-validation.md>) | Actual local results, limitations và final PR CI evidence |
 | [Chi phí tương lai](<./future-costs.md>) | Khoản mục chưa được duyệt chi |
 
 ## Quyền sở hữu và giới hạn

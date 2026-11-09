@@ -1,0 +1,9 @@
+.local/
+.env*
+node_modules/
+.next/
+src/generated/
+playwright-report/
+test-results/
+database-test-results/
+pnpm-lock.yaml

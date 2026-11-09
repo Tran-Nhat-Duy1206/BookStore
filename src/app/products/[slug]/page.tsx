@@ -1,19 +1,17 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { books, categories, series } from "@/modules/catalog/data";
+import { readCatalog } from "@/modules/catalog/read-catalog";
 import { releases } from "@/modules/editorial/data";
 import { BookCover } from "@/components/book-cover";
 import { BookTilt } from "@/components/motion";
 import { AddToCart, WishlistButton } from "@/components/demo-state";
 import { BookGrid, SectionHeading, ReleaseBadge } from "@/components/cards";
-export function generateStaticParams() {
-  return books.map((b) => ({ slug: b.slug }));
-}
 export async function generateMetadata({
   params,
 }: {
   params: Promise<{ slug: string }>;
 }) {
+  const { books } = await readCatalog();
   const { slug } = await params;
   const b = books.find((b) => b.slug === slug);
   return { title: b?.title || "Không tìm thấy sách" };
@@ -23,6 +21,7 @@ export default async function ProductPage({
 }: {
   params: Promise<{ slug: string }>;
 }) {
+  const { books, categories, series } = await readCatalog();
   const { slug } = await params;
   const book = books.find((b) => b.slug === slug);
   if (!book) notFound();

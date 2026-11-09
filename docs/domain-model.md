@@ -1,6 +1,6 @@
 # Mô hình miền sách dự kiến
 
-Tách **nội dung trí tuệ**, **ấn bản xuất bản** và **đơn vị bán/giữ kho**. Đây là thiết kế tương lai; không khẳng định đã có schema hoặc migration.
+Tách **nội dung trí tuệ**, **ấn bản xuất bản** và **đơn vị bán/giữ kho**. Batch3.1 hiện thực phần catalog qua [ADR-010](./adr-010-catalog-persistence.md); ADR giải quyết cardinality trước migration. Pricing/composition/inventory operations trong tài liệu vẫn là tương lai, không được bật trong batch này.
 
 ## Thuật ngữ và quan hệ
 
@@ -16,8 +16,8 @@ Tách **nội dung trí tuệ**, **ấn bản xuất bản** và **đơn vị b�
 
 Quan hệ dự kiến:
 
-- Series có nhiều Volume; Volume liên kết Work theo quy tắc metadata. Work có thể xuất hiện trong nhiều ngữ cảnh series qua quan hệ riêng, không ép một Work chỉ có một series.
-- Edition có nhiều EditionContent; mỗi dòng tham chiếu Work và có thể Volume, với `sequence`, phạm vi chương/phần và ghi chú đầy đủ/rút gọn nếu cần.
+- Batch3.1 chuẩn hóa cách nói tắt “Series có Volumes”: Work sở hữu Volume; Series nhóm Works qua SeriesWork nhiều–nhiều và thứ tự riêng. Một Work thuộc nhiều Series được phép; primary membership phục vụ DTO cũ, không hạn chế membership khác.
+- Edition có nhiều EditionContent có thứ tự, mỗi dòng tham chiếu Volume và Work thông qua Volume. Standalone có một unit nội bộ không đánh số; omnibus/anthology có thể nối nhiều units từ một hoặc nhiều Works. Phạm vi chương/rút gọn là mở rộng tương lai.
 - Một Work/Volume có thể xuất hiện ở nhiều Edition. Đây là quan hệ nhiều–nhiều thông qua EditionContent, không phải cột `volumeNumber` đơn trên Edition.
 - Product có một hay nhiều SKU. SKU sách đơn gắn Edition; SKU box/bundle gắn cấu phần theo quy tắc bên dưới. Không bắt buộc mọi sản phẩm hàng hóa tương lai phải có Edition.
 - ISBN là identifier của ấn bản phù hợp, không dùng làm primary key SKU; có sách không có ISBN và tái bản cần xác minh identifier.

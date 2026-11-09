@@ -2,17 +2,17 @@
 
 ## Quyết định nền tảng
 
-**Modular monolith**: một ứng dụng triển khai chính với ranh giới nghiệp vụ rõ, chưa cần microservices. Thiết kế này đã được chọn làm định hướng, không khẳng định cấu trúc thư mục hay backend đã tồn tại.
+**Modular monolith**: một ứng dụng với ranh giới nghiệp vụ rõ, chưa cần microservices. Frontend Foundation đã merge; Batch3.1 bổ sung catalog read boundary và local persistence. Admin/backend nghiệp vụ ngoài catalog read vẫn chưa triển khai. [Phase3 plan](./phase3-plan.md) phân biệt batch được duyệt và phần tương lai.
 
 | Thành phần | Định hướng | Trạng thái tài liệu |
 |---|---|---|
-| Next.js App Router + React | Routing, render nội dung, server/client boundary | Phase 2 dự kiến/đối chiếu mã nguồn khi nghiệm thu |
-| TypeScript | Kiểu dữ liệu và hợp đồng module | Dự kiến |
-| Tailwind CSS | Styling dựa semantic tokens | Dự kiến |
-| Motion | Chuyển động tương tác nhỏ, tôn trọng reduced motion | Dự kiến |
-| Fixture repository | Nguồn dữ liệu demo xác định, không API giả nhận giao dịch | Phase 2 dự kiến |
-| PostgreSQL | Lưu trữ quan hệ và transaction khi có backend | Phase 3 trở đi, chưa triển khai ở demo |
-| Prisma | ORM/migration được khuyến nghị để đánh giá | **Tương lai, không cài trong milestone này** |
+| Next.js App Router + React | Routing, render nội dung, server/client boundary | Frontend Foundation đã triển khai |
+| TypeScript | Public DTO/read contracts | Đã triển khai |
+| Tailwind CSS | Semantic tokens | Giữ nguyên |
+| Motion | Hiệu ứng nhỏ/reduced motion | Giữ nguyên |
+| Fixture repository | Typed default adapter, không DB dependency | Batch3.1 |
+| PostgreSQL | Isolated local/CI catalog persistence | Batch3.1; không production |
+| Prisma | Client/adapter/CLI7.10.1, migrations/seed | Batch3.1 được duyệt |
 | External payment/shipping/storage | Adapter riêng khi có nhu cầu | Chưa tích hợp, không credentials |
 
 ## Luồng phụ thuộc
@@ -46,9 +46,11 @@ Tên thư mục cụ thể phải theo cấu trúc mã nguồn thực tế; tài
 - Không lộ database URL, signing secret hay token qua biến public hoặc bundle client.
 - Các use case cross-module dùng contract/event nội bộ có version; chưa cần message broker. Outbox có thể bổ sung khi xử lý sự kiện bền vững thật.
 
-## Backend tương lai
+## Catalog persistence hiện tại và backend tương lai
 
-PostgreSQL cung cấp khóa ngoại, unique constraints và transaction cho metadata lẫn stock ledger. Đánh giá Prisma với transaction, migrations, query quan trọng, connection pooling và runtime compatibility trước khi chọn chính thức. Migration phải review, có kế hoạch backup/rollback; không chạy production migration từ demo.
+[ADR-010](./adr-010-catalog-persistence.md) và [local guide](./catalog-database.md) mô tả14 catalog tables, reviewed additive migrations, seed hư cấu, UUID/public IDs và read-only PostgreSQL projection. Storefront lấy public book manifest từ server, không ORM types/records. Fixture là mặc định; database failures không fallback. Runtime dynamic rendering tránh fixture HTML cũ khi đổi source; request memoization không phải public persistent cache.
+
+Stock ledger, admin identity, authorization và publishing là batch sau, chưa triển khai. Không chạy production migration hoặc mở commerce từ demo.
 
 ## Vận hành dự kiến
 

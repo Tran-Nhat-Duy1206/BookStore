@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { books } from "@/modules/catalog/data";
+import { readCatalog } from "@/modules/catalog/read-catalog";
 import { releases } from "@/modules/editorial/data";
 import { ReleaseBadge, releaseLabels } from "@/components/cards";
 import { BookCover } from "@/components/book-cover";
@@ -9,8 +9,13 @@ export default async function ReleasesPage({
 }: {
   searchParams: Promise<{ status?: string }>;
 }) {
+  const { books } = await readCatalog();
   const { status } = await searchParams;
-  const items = status ? releases.filter((r) => r.status === status) : releases;
+  const items = releases.filter(
+    (r) =>
+      (!status || r.status === status) &&
+      books.some((book) => book.id === r.bookId),
+  );
   return (
     <div className="container">
       <div className="page-heading">
