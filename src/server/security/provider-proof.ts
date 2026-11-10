@@ -1,6 +1,8 @@
 import "server-only";
 
 import { createHash, randomUUID } from "node:crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { createAdmissionAuthority } from "./admission-authority";
 import { Pool } from "pg";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { betterAuth } from "better-auth";
@@ -110,10 +112,21 @@ function bad(status = 400, state = "invalid-input") {
   return result(staticResponse(status, state));
 }
 
-/** B.2a ONLY: no env fallback, provisioning option, external hook, listener or admission writer.
- * Exact disposable profiles and .invalid logical origin make this intentionally unmounted.
+interface NativeCorrelation {
+  userId: string;
+  authorizationVersion: number;
+  factorIds: readonly string[];
+  purpose: "login" | "step_up";
+}
+/** Private native engine. The correlation source is constructed ONLY by the
+ * fixed durable factory below; it is not an SDK verifier hook or proof authority.
+ * Real maintained verification and independent committed-cookie lookup remain
+ * mandatory. The B.2a export has no durable correlation source or grant power.
  */
-export async function createUnmountedProvider(config: Config) {
+async function createProviderCore(
+  config: Config,
+  correlation?: () => NativeCorrelation | undefined,
+) {
   let authUrl: string, staffUrl: string;
   try {
     if (
@@ -139,12 +152,14 @@ export async function createUnmountedProvider(config: Config) {
   }
   const authPool = new Pool({
     connectionString: authUrl,
+    options: "-c application_name=bookstore-unmounted-provider",
     max: 3,
     connectionTimeoutMillis: 3000,
     statement_timeout: 5000,
   });
   const staffPool = new Pool({
     connectionString: staffUrl,
+    options: "-c application_name=bookstore-unmounted-provider",
     max: 2,
     connectionTimeoutMillis: 3000,
     statement_timeout: 5000,
@@ -170,7 +185,12 @@ export async function createUnmountedProvider(config: Config) {
     has_schema_privilege('audit','USAGE') AS audit_usage,
     has_any_column_privilege((SELECT c.oid FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='identity' AND c.relname='Session'),'SELECT') AS session_secret_read,
     has_any_column_privilege((SELECT c.oid FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='identity' AND c.relname='Account'),'SELECT') AS password_read,
-    has_any_column_privilege((SELECT c.oid FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='identity' AND c.relname='TwoFactor'),'SELECT') AS factor_secret_read
+    has_any_column_privilege((SELECT c.oid FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='identity' AND c.relname='TwoFactor'),'SELECT') AS factor_secret_read,
+    (current_setting('log_statement')='none' AND current_setting('log_min_error_statement')='panic'
+     AND current_setting('log_parameter_max_length')='0' AND current_setting('log_parameter_max_length_on_error')='0'
+     AND current_setting('log_duration')='off' AND current_setting('log_min_duration_statement')='-1'
+     AND current_setting('log_min_duration_sample')='-1' AND current_setting('log_transaction_sample_rate')::numeric=0
+     AND NOT EXISTS(SELECT 1 FROM pg_settings WHERE name LIKE 'pgaudit.%' OR name LIKE 'auto_explain.%')) AS logging_safe
     FROM pg_roles r WHERE r.rolname=current_user`)
       ).rows[0];
       const parsed = new URL(url);
@@ -189,6 +209,7 @@ export async function createUnmountedProvider(config: Config) {
         row.db_create ||
         row.db_temp ||
         row.schema_create ||
+        !row.logging_safe ||
         (url === authUrl && (row.staff_usage || row.audit_usage)) ||
         (url === staffUrl &&
           (row.session_secret_read ||
@@ -260,6 +281,7 @@ export async function createUnmountedProvider(config: Config) {
         issuer: "BookStore synthetic proof investigation",
         skipVerificationOnEnable: false,
         trustDeviceMaxAge: 0,
+        totpOptions: { period: 30, digits: 6 },
         backupCodeOptions: { storeBackupCodes: "encrypted" },
         accountLockout: {
           enabled: true,
@@ -469,7 +491,7 @@ export async function createUnmountedProvider(config: Config) {
       return { state: "unavailable", staffAdmission: notAdmitted };
     }
   }
-  return Object.freeze({
+  const api = Object.freeze({
     resolveSession,
     async password(
       email: unknown,
@@ -540,7 +562,7 @@ export async function createUnmountedProvider(config: Config) {
       const jar = cookies(cookieHeader);
       if (!jar || typeof code !== "string" || !/^[0-9]{6}$/.test(code))
         return bad();
-      const primary =
+      let primary =
         typeof primaryContext === "object" && primaryContext !== null
           ? primaryStates.get(primaryContext as PrimaryObservation)
           : undefined;
@@ -550,6 +572,33 @@ export async function createUnmountedProvider(config: Config) {
         return bad(403, "context-denied");
       try {
         await checkProfiles();
+        // B.2b correlation is a private, one-call ALS value loaded from protected
+        // DB state BEFORE the durable claim. It neither certifies MFA nor skips
+        // native verification. Default B.2a callers cannot supply this source.
+        const restored =
+          !primary && primaryContext === undefined
+            ? correlation?.()
+            : undefined;
+        if (restored) {
+          if (
+            !opaque(restored.userId) ||
+            !Number.isSafeInteger(restored.authorizationVersion) ||
+            restored.authorizationVersion < 0 ||
+            !restored.factorIds.every(opaque)
+          )
+            return bad(403, "context-denied");
+          const current = await state(restored.userId);
+          primary = {
+            userId: restored.userId,
+            before: {
+              ...current,
+              version: restored.authorizationVersion,
+              ids: [...restored.factorIds],
+            },
+            cookieFingerprint: digest(header(jar)),
+            challenge: restored.purpose === "login",
+          };
+        }
         const prior = await rawSession(jar);
         if (!primary && !prior) return bad(401, "provider-denied");
         const userId = primary?.userId ?? prior!.user.id;
@@ -712,7 +761,370 @@ export async function createUnmountedProvider(config: Config) {
         throw new Error("Unmounted provider close failed.");
     },
   });
+  return {
+    api,
+    canonicalCookie(value: unknown): string | null {
+      const jar = cookies(value);
+      return jar ? header(jar) : null;
+    },
+    effectiveCookie(value: unknown, response: Response): string | null {
+      const jar = cookies(value);
+      return jar
+        ? header(effective(jar, response.headers.getSetCookie()))
+        : null;
+    },
+  };
+}
+/** Accepted B.2a surface remains non-authorizing and has no durable authority. */
+export async function createUnmountedProvider(config: Config) {
+  return (await createProviderCore(config)).api;
 }
 export type UnmountedProvider = Awaited<
   ReturnType<typeof createUnmountedProvider>
+>;
+
+/** SERVER-ONLY completion capability; never a public JSON/token DTO. */
+export interface DormantControlOperation {
+  readonly response: Response;
+  readonly evidenceHandle: string | null;
+}
+function controlOperation(
+  allowed: boolean,
+  reason: string,
+  state: string,
+  updates: readonly string[] = [],
+  evidenceHandle: string | null = null,
+): DormantControlOperation {
+  const status = allowed
+    ? 200
+    : reason === "rate_limited"
+      ? 429
+      : reason === "unavailable"
+        ? 503
+        : reason === "unauthenticated"
+          ? 401
+          : 403;
+  const headers = new Headers({
+    "content-type": "application/json",
+    "cache-control": "private, no-store",
+  });
+  for (const update of updates) headers.append("set-cookie", update);
+  return Object.freeze({
+    response: new Response(
+      JSON.stringify({
+        allowed,
+        reason,
+        state,
+        applicationAdmission: "disabled",
+      }),
+      { status, headers },
+    ),
+    evidenceHandle,
+  });
+}
+
+/** B.2b dormant composition ONLY. No application, HTTP or default-kernel wiring.
+ * The verifier credential is an explicit trusted positive issuer, not a claim
+ * that PostgreSQL independently ran the SDK. This closure alone owns both real
+ * native calls and durable issuance. No observation/claims/callback input mints
+ * evidence. DB state, one-shot burns, approvals and deadlines are authoritative.
+ */
+export async function createDormantAdmissionControls(
+  config: Config & { verifierUrl: string },
+) {
+  try {
+    if (
+      Object.keys(config).sort().join(",") !==
+      "authUrl,secret,staffUrl,verifierUrl"
+    )
+      throw new Error();
+    const a = new URL(assertFoundationUrl(config.authUrl, "auth"));
+    const s = new URL(assertFoundationUrl(config.staffUrl, "staff"));
+    const v = new URL(assertFoundationUrl(config.verifierUrl, "verifier"));
+    if (
+      [s, v].some(
+        (u) =>
+          u.hostname !== a.hostname ||
+          u.port !== a.port ||
+          u.pathname !== a.pathname,
+      )
+    )
+      throw new Error();
+    if (
+      typeof config.secret !== "string" ||
+      Buffer.byteLength(config.secret) < 32 ||
+      config.secret.length > 1024 ||
+      /\s/.test(config.secret)
+    )
+      throw new Error();
+  } catch {
+    throw new Error("Invalid dormant provider configuration.");
+  }
+  const authority = await createAdmissionAuthority({
+    verifierUrl: config.verifierUrl,
+    staffUrl: config.staffUrl,
+  });
+  const slot = new AsyncLocalStorage<NativeCorrelation>();
+  let core: Awaited<ReturnType<typeof createProviderCore>>;
+  try {
+    core = await createProviderCore(
+      {
+        authUrl: config.authUrl,
+        staffUrl: config.staffUrl,
+        secret: config.secret,
+      },
+      () => slot.getStore(),
+    );
+  } catch {
+    await authority.close();
+    throw new Error("Dormant native provider unavailable.");
+  }
+  let closed = false;
+  let closePromise: Promise<void> | undefined;
+  const unavailable = () =>
+    controlOperation(false, "unavailable", "dormant-denied");
+  const denied = (reason: string) =>
+    controlOperation(false, reason, "dormant-denied");
+  type Context = {
+    challengeHandle: string;
+    userId: string;
+    authorizationVersion: number;
+    factorIds: readonly string[];
+    purpose: "login" | "step_up";
+  };
+  function context(
+    value: Awaited<ReturnType<typeof authority.resumePrimary>>,
+  ): Context | null {
+    if (
+      !value.allowed ||
+      !value.challengeHandle ||
+      !value.userId ||
+      value.authorizationVersion === undefined ||
+      !value.factorIds ||
+      !value.purpose
+    )
+      return null;
+    return {
+      challengeHandle: value.challengeHandle,
+      userId: value.userId,
+      authorizationVersion: value.authorizationVersion,
+      factorIds: value.factorIds,
+      purpose: value.purpose,
+    };
+  }
+  async function verifyReserved(
+    ctx: Context,
+    code: unknown,
+    cookie: string,
+  ): Promise<DormantControlOperation> {
+    if (closed || typeof code !== "string" || !/^[0-9]{6}$/.test(code))
+      return denied("forbidden");
+    // This independently commits challenge CAS, account/IP charge and global
+    // user/code burn BEFORE native verification. No SDK timeout/rollback unburns it.
+    const reserved = await authority.reserveMfa(
+      ctx.challengeHandle,
+      cookie,
+      code,
+    );
+    if (!reserved.allowed || !reserved.operationHandle || !reserved.deadline)
+      return denied(reserved.reason);
+    if (Date.now() >= Date.parse(reserved.deadline)) return denied("expired");
+    const begun = performance.now();
+    const native = await slot.run(ctx, () => core.api.verifyTotp(code, cookie));
+    if (
+      !native.response.ok ||
+      !native.observation ||
+      native.observation.purpose === "enrollment-investigation" ||
+      native.observation.userId !== ctx.userId
+    )
+      return denied(
+        native.response.status >= 500 ? "unavailable" : "forbidden",
+      );
+    if (performance.now() - begun > 30000) return denied("expired");
+    const finalCookie = core.effectiveCookie(cookie, native.response);
+    if (!finalCookie) return unavailable();
+    const actual = await core.api.resolveSession(finalCookie);
+    if (
+      actual.state !== "provider-authenticated" ||
+      actual.userId !== ctx.userId ||
+      actual.sessionId !== native.observation.sessionId
+    )
+      return denied("stale");
+    // NOT an assessment of WeakMap/metadata! This is the private result of our
+    // immediately awaited native operation. SQL independently enforces its
+    // reserved operation, original pin/version, final binding and hard deadline.
+    const ready = await authority.issueEvidence(
+      reserved.operationHandle,
+      actual.sessionId,
+      finalCookie,
+    );
+    if (!ready.allowed || !ready.evidenceHandle) return denied(ready.reason);
+    return controlOperation(
+      true,
+      "allowed",
+      "dormant-evidence-ready",
+      native.response.headers.getSetCookie(),
+      ready.evidenceHandle,
+    );
+  }
+  return Object.freeze({
+    async password(
+      email: unknown,
+      password: unknown,
+    ): Promise<DormantControlOperation> {
+      if (closed) return unavailable();
+      const prepared = await authority.preparePassword(email);
+      if (!prepared.allowed || !prepared.challengeHandle)
+        return denied(prepared.reason);
+      const native = await core.api.password(email, password);
+      if (!native.response.ok || !native.primary)
+        return denied(
+          native.response.status >= 500 ? "unavailable" : "forbidden",
+        );
+      const state: unknown = await native.response.clone().json();
+      if (
+        !state ||
+        typeof state !== "object" ||
+        !("state" in state) ||
+        state.state !== "totp-required"
+      )
+        return denied("forbidden");
+      const cookie = core.effectiveCookie("", native.response);
+      if (!cookie) return unavailable();
+      const bound = await authority.bindPrimary(
+        prepared.challengeHandle,
+        cookie,
+      );
+      if (!bound.allowed) return denied(bound.reason);
+      return controlOperation(
+        true,
+        "allowed",
+        "dormant-primary-bound",
+        native.response.headers.getSetCookie(),
+      );
+    },
+    async verifyTotp(
+      code: unknown,
+      cookieHeader: unknown,
+    ): Promise<DormantControlOperation> {
+      if (closed) return unavailable();
+      const cookie = core.canonicalCookie(cookieHeader);
+      if (!cookie) return denied("unauthenticated");
+      const original = await authority.resumePrimary(cookie);
+      const ctx = context(original);
+      return ctx ? verifyReserved(ctx, code, cookie) : denied(original.reason);
+    },
+    async stepUp(
+      code: unknown,
+      cookieHeader: unknown,
+    ): Promise<DormantControlOperation> {
+      if (closed) return unavailable();
+      const cookie = core.canonicalCookie(cookieHeader);
+      if (!cookie) return denied("unauthenticated");
+      const actual = await core.api.resolveSession(cookie);
+      if (actual.state !== "provider-authenticated")
+        return denied(
+          actual.state === "unavailable" ? "unavailable" : "unauthenticated",
+        );
+      const prepared = await authority.prepareStepUp(
+        actual.userId,
+        actual.sessionId,
+        cookie,
+      );
+      const ctx = context(prepared);
+      return ctx ? verifyReserved(ctx, code, cookie) : denied(prepared.reason);
+    },
+    async finalize(
+      evidenceHandle: unknown,
+      cookieHeader: unknown,
+    ): Promise<DormantControlOperation> {
+      if (closed) return unavailable();
+      const cookie = core.canonicalCookie(cookieHeader);
+      if (!cookie) return denied("unauthenticated");
+      const actual = await core.api.resolveSession(cookie);
+      if (actual.state !== "provider-authenticated")
+        return denied(
+          actual.state === "unavailable" ? "unavailable" : "unauthenticated",
+        );
+      const decision = await authority.finalize(
+        evidenceHandle,
+        actual.sessionId,
+        cookie,
+      );
+      return controlOperation(
+        decision.allowed,
+        decision.reason,
+        decision.allowed ? "dormant-finalized" : "dormant-denied",
+      );
+    },
+    async check(cookieHeader: unknown) {
+      const cookie = core.canonicalCookie(cookieHeader);
+      if (closed || !cookie)
+        return Object.freeze({ allowed: false, reason: "unavailable" });
+      const actual = await core.api.resolveSession(cookie);
+      if (actual.state !== "provider-authenticated")
+        return Object.freeze({
+          allowed: false,
+          reason:
+            actual.state === "unavailable" ? "unavailable" : "unauthenticated",
+        });
+      return authority.checkAccess(actual.userId, actual.sessionId);
+    },
+    async touch(cookieHeader: unknown) {
+      if (closed) return unavailable();
+      const actual = await core.api.resolveSession(cookieHeader);
+      if (actual.state !== "provider-authenticated")
+        return denied("unauthenticated");
+      const live = await authority.checkAccess(actual.userId, actual.sessionId);
+      if (!live.allowed || live.authorizationVersion === undefined)
+        return denied(live.reason);
+      const decision = await authority.touch(
+        actual.userId,
+        actual.sessionId,
+        live.authorizationVersion,
+      );
+      return controlOperation(
+        decision.allowed,
+        decision.reason,
+        "dormant-touch",
+      );
+    },
+    async revoke(cookieHeader: unknown, targetSession?: unknown) {
+      if (closed) return unavailable();
+      const actual = await core.api.resolveSession(cookieHeader);
+      if (actual.state !== "provider-authenticated")
+        return denied("unauthenticated");
+      const live = await authority.checkAccess(actual.userId, actual.sessionId);
+      if (!live.allowed || live.authorizationVersion === undefined)
+        return denied(live.reason);
+      const decision = await authority.revoke(
+        actual.userId,
+        actual.sessionId,
+        live.authorizationVersion,
+        targetSession ?? actual.sessionId,
+      );
+      return controlOperation(
+        decision.allowed,
+        decision.reason,
+        "dormant-revoke",
+      );
+    },
+    async close() {
+      if (!closePromise) {
+        closed = true;
+        closePromise = (async () => {
+          const results = await Promise.allSettled([
+            core.api.close(),
+            authority.close(),
+          ]);
+          if (results.some((entry) => entry.status === "rejected"))
+            throw new Error("Dormant controls close failed.");
+        })();
+      }
+      return closePromise;
+    },
+  });
+}
+export type DormantAdmissionControls = Awaited<
+  ReturnType<typeof createDormantAdmissionControls>
 >;

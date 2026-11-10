@@ -95,4 +95,8 @@ These records do not authorize production auth, operational CRUD, a full admin a
 
 ## ADR-016 — Unmounted provider observation and session contract
 
-[Unmounted contract](./adr-016-unmounted-provider-proof.md): B.2a only, canonical maintained SDK sessions/TOTP and purpose clients; private non-authorizing observations, real cookie/commit/failure investigation. The default kernel resolver stays closed. [Preserved B.2 plan](./batch-3-2b2-plan.md) separates later proposals; [validation](./batch-3-2b2a-validation.md) separates tested facts from missing durable proof/admission authority. No B.2b, mounted auth, real accounts or activation approval.
+[Unmounted contract](./adr-016-unmounted-provider-proof.md): accepted B.2a, normally merged through PR#5 at `8458fdf5f9286de829aeac7e296eccf1bebd9c52`. Canonical maintained SDK sessions/TOTP and purpose clients; private non-authorizing observations, real cookie/commit/failure investigation. The default kernel resolver stays closed. [Preserved B.2 plan](./batch-3-2b2-plan.md) is historical; [validation](./batch-3-2b2a-validation.md) preserves its tested facts and absent durable authority at that stage.
+
+## ADR-017 — Dormant durable evidence and admission controls
+
+[Design gate](./adr-017-durable-admission-controls.md): B.2b only, source review and real SDK/PG feasibility resolved BEFORE migration006. Explicit narrow VERIFIER issuer, independent monotone approval generations, durable original bindings and global pre-SDK code reservations, local transactional consumption/admission/audit, immutable epoch/revocation/idle controls and deny-only failure handling. [Validation](./batch-3-2b2b-validation.md) records actual results separately from pending acceptance/CI. Normal application admission remains disabled; no mounted auth, UI, real identity/ceremony, operational privilege, B.2c or merge approval.

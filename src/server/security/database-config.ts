@@ -1,6 +1,6 @@
 /** Independent foundation guard: no catalog/spike URL or environment fallback. */
 export type FoundationPurpose =
-  "migrate" | "reader" | "auth" | "staff" | "worker";
+  "migrate" | "reader" | "auth" | "staff" | "worker" | "verifier";
 
 const purposes: readonly FoundationPurpose[] = [
   "migrate",
@@ -8,6 +8,7 @@ const purposes: readonly FoundationPurpose[] = [
   "auth",
   "staff",
   "worker",
+  "verifier",
 ];
 
 function parse(value: string): URL {

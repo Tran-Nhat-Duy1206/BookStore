@@ -13,6 +13,7 @@ import { PostgresCatalogRepository } from "../../src/modules/catalog/postgres-re
 import { books, categories, series } from "../../src/modules/catalog/data";
 import { createFoundationDatabase, type FoundationDatabase } from "./database";
 import { runSecurityMigrations } from "../../scripts/security-database";
+import { seedOfflineAdmissionControls } from "../admission-controls/offline-fixture";
 import { assertFoundationUrl } from "../../src/server/security/database-config";
 import { createSecurityKernel } from "../../src/server/security/kernel";
 import {
@@ -106,6 +107,9 @@ async function admitFixture(
       options.mfaAge ?? "0 seconds",
     ],
   );
+  // Explicit migration-owner structural fixture for the additive B.2b guard;
+  // no runtime approval/admission privilege or genuine SDK-MFA claim.
+  await seedOfflineAdmissionControls(c.migration, f);
 }
 async function fixture(role: string = "Analyst", c = main): Promise<Fixture> {
   const userId = randomUUID(),
@@ -223,7 +227,7 @@ afterAll(async () => {
 });
 
 describe("canonical history and dormant initial state", () => {
-  it("replays all five canonical migrations with exactly fourteen public catalog tables", async () => {
+  it("replays all six canonical migrations with exactly fourteen public catalog tables", async () => {
     const result = await main.migration.query(
       'SELECT migration_name FROM public."_prisma_migrations" ORDER BY migration_name',
     );
@@ -233,6 +237,7 @@ describe("canonical history and dormant initial state", () => {
       "003_catalog_identity_checks",
       "004_security_identity",
       "005_security_foundation",
+      "006_durable_admission_controls",
     ]);
     expect(
       (
