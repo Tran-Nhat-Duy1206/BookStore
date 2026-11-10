@@ -14,5 +14,6 @@ database-test-results/
 src/generated/prisma/
 src/generated/security/
 security-test-results/
+provider-proof-test-results/
 experiments/auth-spike/generated/
 auth-spike-test-results/

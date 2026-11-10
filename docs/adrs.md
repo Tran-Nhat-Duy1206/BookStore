@@ -91,4 +91,8 @@ These records do not authorize production auth, operational CRUD, a full admin a
 
 ## ADR-015 — Security foundation implementation
 
-[Foundation contract](./adr-015-security-foundation.md): owner-authorized Batch3.2B.1 only. One canonical additive history, isolated purpose credentials, server-only deny-default kernel, Owner-governance backstops, explicit isolation/time semantics and durable audit/reconciliation. No runtime admission writer, real Owner activation, auth transport/UI or business operations. [Validation](./batch-3-2b1-validation.md) separates actual local checks, exact-HEAD CI and remaining approvals.
+[Foundation contract](./adr-015-security-foundation.md): accepted/merged Batch3.2B.1. One canonical additive history, isolated purpose credentials, server-only deny-default kernel, Owner-governance backstops, explicit isolation/time semantics and durable audit/reconciliation. No runtime admission writer, real Owner activation, auth transport/UI or business operations. [Historical validation](./batch-3-2b1-validation.md) records its implementation-stage evidence.
+
+## ADR-016 — Unmounted provider observation and session contract
+
+[Unmounted contract](./adr-016-unmounted-provider-proof.md): B.2a only, canonical maintained SDK sessions/TOTP and purpose clients; private non-authorizing observations, real cookie/commit/failure investigation. The default kernel resolver stays closed. [Preserved B.2 plan](./batch-3-2b2-plan.md) separates later proposals; [validation](./batch-3-2b2a-validation.md) separates tested facts from missing durable proof/admission authority. No B.2b, mounted auth, real accounts or activation approval.
