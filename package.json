@@ -38,7 +38,8 @@
     "security:local:init": "node scripts/security-local-db.mjs init",
     "security:local:start": "node scripts/security-local-db.mjs start",
     "security:local:stop": "node scripts/security-local-db.mjs stop",
-    "security:local:status": "node scripts/security-local-db.mjs status"
+    "security:local:status": "node scripts/security-local-db.mjs status",
+    "provider:proof:test": "pnpm db:generate && vitest run --config vitest.provider-proof.config.ts"
   },
   "dependencies": {
     "@fontsource/be-vietnam-pro": "5.3.0",
