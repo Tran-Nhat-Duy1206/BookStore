@@ -248,14 +248,14 @@ afterAll(async () => {
 });
 
 describe("canonical unmounted provider and trusted resolver", () => {
-  it("uses exactly six canonical migrations and no staff/admission seed", async () => {
+  it("uses exactly seven canonical migrations and no staff/admission seed", async () => {
     expect(
       (
         await migration.query(
           'SELECT count(*)::int AS count FROM public."_prisma_migrations"',
         )
       ).rows[0].count,
-    ).toBe(6);
+    ).toBe(7);
     expect(
       (await migration.query("SELECT state FROM staff.governance")).rows[0]
         .state,

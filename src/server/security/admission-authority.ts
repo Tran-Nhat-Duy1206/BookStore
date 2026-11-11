@@ -53,6 +53,21 @@ const issuerSignatures = [
   "control_private.reserve_mfa(text,text,text)",
   "control_private.issue_evidence(text,text,text)",
 ];
+const transportSignatures = [
+  "staff.reserve_transport_request()",
+  "staff.cancel_transport_context(text)",
+];
+const staffSignatures = [
+  "staff.check_access(text,text,text,bigint)",
+  "staff.set_status(text,text,bigint,text,text)",
+  "staff.replace_roles(text,text,bigint,text,text[])",
+  "staff.revoke_admission(text,text,bigint,text)",
+  "audit.record_denial(uuid,text,text)",
+  "staff.control_clock_probe()",
+  "staff.finalize_control(text,text,text)",
+  "staff.touch_control(text,text,bigint)",
+  ...transportSignatures,
+];
 const handle = (value: unknown): value is string =>
   typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
 const opaque = (value: unknown): value is string =>
@@ -260,6 +275,29 @@ export async function createAdmissionAuthority(config: {
           OR owner_role.rolsuper OR owner_role.rolcreatedb OR owner_role.rolcreaterole
           OR owner_role.rolbypassrls)) AS unexpected_private_exec,
       (SELECT count(*)::integer FROM unnest($1::text[]) signature WHERE to_regprocedure(signature) IS NOT NULL AND has_function_privilege(to_regprocedure(signature),'EXECUTE')) AS issuer_exec_count,
+      EXISTS(SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+        WHERE n.nspname IN ('staff','audit') AND has_function_privilege(p.oid,'EXECUTE')
+        AND NOT(p.oid=ANY(ARRAY(SELECT to_regprocedure(signature)::oid FROM unnest($3::text[]) signature
+          WHERE to_regprocedure(signature) IS NOT NULL)))) AS unexpected_staff_exec,
+      (SELECT count(*)::integer FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+        WHERE n.nspname='staff' AND p.proname=ANY($4::text[])) AS transport_function_count,
+      (SELECT count(*)::integer FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+        WHERE n.nspname='staff' AND p.proname=ANY($4::text[])
+        AND has_function_privilege(p.oid,'EXECUTE')) AS transport_exec_count,
+      EXISTS(SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+        JOIN pg_roles owner_role ON owner_role.oid=p.proowner
+        WHERE n.nspname='staff' AND p.proname=ANY($4::text[])
+        AND (p.proargtypes::text IS DISTINCT FROM CASE p.proname
+          WHEN 'reserve_transport_request' THEN '' WHEN 'cancel_transport_context' THEN '25' END
+          OR p.prorettype<>3802 OR NOT p.prosecdef OR p.prokind<>'f'
+          OR p.proconfig IS DISTINCT FROM ARRAY['search_path=pg_catalog']::text[]
+          OR owner_role.rolname<>$2 OR owner_role.rolcanlogin OR owner_role.rolsuper
+          OR owner_role.rolcreatedb OR owner_role.rolcreaterole OR owner_role.rolbypassrls
+          OR owner_role.rolinherit OR EXISTS(SELECT 1 FROM pg_auth_members m WHERE m.member=owner_role.oid)
+          OR EXISTS(SELECT 1 FROM aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl
+            WHERE acl.privilege_type<>'EXECUTE' OR acl.is_grantable
+            OR acl.grantee NOT IN (p.proowner,(SELECT oid FROM pg_roles
+              WHERE rolname=regexp_replace($2::text,'_guard$','_staff')))))) AS unsafe_transport_function,
       current_setting('log_statement') AS log_statement,
       current_setting('log_min_error_statement') AS log_min_error_statement,
       current_setting('log_parameter_max_length') AS log_parameter_max_length,
@@ -277,6 +315,8 @@ export async function createAdmissionAuthority(config: {
       [
         role === "verifier" ? issuerSignatures : [],
         url.username.replace(/_(?:verifier|staff)$/, "_guard"),
+        role === "staff" ? staffSignatures : [],
+        ["reserve_transport_request", "cancel_transport_context"],
       ],
     );
     const row = result.rows[0];
@@ -301,6 +341,11 @@ export async function createAdmissionAuthority(config: {
       row.unexpected_private_exec ||
       row.issuer_exec_count !==
         (role === "verifier" ? issuerSignatures.length : 0) ||
+      row.unexpected_staff_exec ||
+      ![0, transportSignatures.length].includes(row.transport_function_count) ||
+      row.transport_exec_count !==
+        (role === "staff" ? row.transport_function_count : 0) ||
+      row.unsafe_transport_function ||
       row.log_statement !== "none" ||
       row.log_min_error_statement !== "panic" ||
       row.log_parameter_max_length !== "0" ||
@@ -313,16 +358,18 @@ export async function createAdmissionAuthority(config: {
       row.unexpected_logging
     )
       throw new Error("metadataUnavailable");
+    // Public configuration availability only, never MFA/admission evidence.
+    return row.transport_function_count === transportSignatures.length;
   }
   async function checked<T>(
     role: Role,
-    work: (client: PoolClient) => Promise<T>,
+    work: (client: PoolClient, transportSupported: boolean) => Promise<T>,
   ): Promise<T> {
     if (closed) throw new Error("metadataUnavailable");
     const client = await pools[role].connect();
     try {
-      await metadata(client, role);
-      return await work(client);
+      const transportSupported = await metadata(client, role);
+      return await work(client, transportSupported);
     } finally {
       client.release();
     }
@@ -453,22 +500,31 @@ export async function createAdmissionAuthority(config: {
     })();
     return closePromise;
   }
+  let transportSupported = false;
   try {
-    await Promise.all([
-      checked("verifier", async (client) => {
+    const [verifierTransport, staffTransport] = await Promise.all([
+      checked("verifier", async (client, supported) => {
         if (!(await probe(client, "verifier")).allowed)
           throw new Error("metadataUnavailable");
+        return supported;
       }),
-      checked("staff", async (client) => {
+      checked("staff", async (client, supported) => {
         if (!(await probe(client, "staff")).allowed)
           throw new Error("metadataUnavailable");
+        return supported;
       }),
     ]);
+    if (verifierTransport !== staffTransport)
+      throw new Error("metadataUnavailable");
+    transportSupported = staffTransport;
   } catch {
     await close().catch(() => {});
     throw new Error("metadataUnavailable");
   }
   return Object.freeze({
+    // Snapshot of both validated initial role catalogs; no quota reservation,
+    // private state, identity or authorization claim is exposed by this flag.
+    transportSupported,
     clockProbe: () =>
       call(
         "verifier",
@@ -562,6 +618,26 @@ export async function createAdmissionAuthority(config: {
         "SELECT staff.check_access($1::text,$2::text,'security.self.read'::text,NULL::bigint) AS decision",
         [actor, sid],
         opaque(actor) && opaque(sid),
+      ),
+    // Fixed deny-only transport operations; no generic SQL or actor/target input.
+    // These fail closed against a B.2b-only001–006 database without007.
+    reserveTransport: () =>
+      call(
+        "staff",
+        "SELECT staff.reserve_transport_request() AS decision",
+        [],
+        true,
+      ),
+    cancelTransport: (credential: unknown) =>
+      call(
+        "staff",
+        "SELECT staff.cancel_transport_context($1::text) AS decision",
+        [credential],
+        cookie(credential) &&
+          Buffer.byteLength(credential, "utf8") <= 16384 &&
+          /^[A-Za-z0-9_.-]+=[^\s;]+(; [A-Za-z0-9_.-]+=[^\s;]+)*$/.test(
+            credential,
+          ),
       ),
     close,
   });
