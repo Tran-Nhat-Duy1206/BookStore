@@ -414,6 +414,9 @@ jobs:
       - name: Verify real CA-validated wire controls cancellation replay and privileges
         run: pnpm transport:https:test --reporter=default --reporter=junit --outputFile=provider-proof-test-results/https.xml
       - name: Require actual isolated-NSS Chromium TLS and cookie acceptance
+        # Independently collect browser trust evidence even if wire tests fail;
+        # any failing step still fails this job. Never skip/replace either gate.
+        if: ${{ !cancelled() }}
         run: pnpm transport:browser:test --reporter=default --reporter=junit --outputFile=provider-proof-test-results/https-browser.xml
       - name: Build an ordinary production fixture storefront
         run: pnpm build

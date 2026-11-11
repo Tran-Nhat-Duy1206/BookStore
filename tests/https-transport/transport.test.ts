@@ -109,7 +109,17 @@ beforeAll(() =>
     );
   }),
 );
-beforeEach(() => secretSafe(() => fx.resetScenario()));
+beforeEach(() =>
+  secretSafe(async () => {
+    await transport.close();
+    await fx.resetScenario();
+    // Separate scenarios must not share the non-authorizing process-local ingress
+    // window. No limiter/state is reset within any attack, race or quota scenario.
+    transport = await startRestrictedHttpsTestTransport(
+      transportConfig(fx.config, certs),
+    );
+  }),
+);
 afterAll(() =>
   secretSafe(async () => {
     await transport?.close();
@@ -692,6 +702,66 @@ describe("restricted actual HTTPS wire and durable authority (not browser eviden
     },
   );
   scenario(
+    "eight-way ingress pressure fails closed without exceeding the shared quota",
+    async () => {
+      const child = await startWireWorker(
+        transportConfig(fx.config, certs, 3445),
+      );
+      const clients = [
+        new WireClient(certs.ca),
+        new WireClient(certs.ca, 3445),
+      ];
+      const before = (
+        await fx.migration.query<{ n: number }>(
+          "SELECT count(*)::integer n FROM staff.admissions WHERE mode='verified'",
+        )
+      ).rows[0].n;
+      try {
+        let count = 0;
+        for (let batch = 0; batch < 16; batch++) {
+          const results = await Promise.all(
+            Array.from({ length: 8 }, (_, i) => clients[i % 2].post("session")),
+          );
+          count += results.length;
+          if (!results.every((r) => [401, 429, 503].includes(r.status)))
+            throw new Error(
+              `Synthetic pressure statuses ${results.map((r) => r.status).join(",")}; private details suppressed.`,
+            );
+          expect(
+            results.every(
+              (r) =>
+                r.authorized &&
+                r.applicationDisabled &&
+                r.noStore &&
+                !r.location &&
+                r.cookies.length === 0 &&
+                r.state ===
+                  (r.status === 401
+                    ? "denied"
+                    : r.status === 429
+                      ? "rate-limited"
+                      : "unavailable"),
+            ),
+          ).toBe(true);
+        }
+        expect(count).toBe(128);
+        const bounded = await fx.migration.query<{ safe: boolean }>(
+          "SELECT coalesce((SELECT used<=120 FROM control_private.budgets WHERE key_mac=control_private.mac('transport-ingress-v1','common-loopback')),true) AS safe",
+        );
+        expect(bounded.rows[0].safe).toBe(true);
+        expect(
+          (
+            await fx.migration.query<{ n: number }>(
+              "SELECT count(*)::integer n FROM staff.admissions WHERE mode='verified'",
+            )
+          ).rows[0].n === before,
+        ).toBe(true);
+      } finally {
+        await child.close();
+      }
+    },
+  );
+  scenario(
     "common ingress quota is atomic across two processes and restart with an anchored window",
     async () => {
       const child = await startWireWorker(
@@ -704,15 +774,19 @@ describe("restricted actual HTTPS wire and durable authority (not browser eviden
       let used = 0,
         denied = 0;
       try {
-        for (let batch = 0; batch < 16; batch++) {
+        // Exact quota semantics are not an eight-way availability promise.
+        // Both independent processes race each boundary; preserve the original
+        // 128 requests, exact120 charges,8 denials and restart/window assertions.
+        for (let batch = 0; batch < 64; batch++) {
           const results = await Promise.all(
-            Array.from({ length: 8 }, (_, i) => clients[i % 2].post("session")),
+            clients.map((client) => client.post("session")),
           );
           used += results.filter((r) => r.status === 401).length;
           denied += results.filter((r) => r.status === 429).length;
-          expect(
-            results.every((r) => r.status === 401 || r.status === 429),
-          ).toBe(true);
+          if (!results.every((r) => r.status === 401 || r.status === 429))
+            throw new Error(
+              `Synthetic exact quota statuses ${results.map((r) => r.status).join(",")}; private details suppressed.`,
+            );
         }
         expect(used).toBe(120);
         expect(denied).toBe(8);
