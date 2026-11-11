@@ -30,13 +30,15 @@ Bộ tài liệu tiếng Việt cho dự án BookStore chính thức tại `E:\B
 | [Phát triển và kiểm thử](./development.md)                                | Toolchain, scripts thực tế, CI và cách tái tạo evidence                              |
 | [Dependency và môi trường](./dependencies.md)                             | Snapshot phiên bản thực do agent điều phối cung cấp, tương thích và nợ tooling       |
 | [Quyết định kiến trúc](./adrs.md)                                         | ADR và hệ quả                                                                        |
-| [Phase3 plan](./phase3-plan.md)                                           | B.1 accepted; B.2a unmounted provider/proof contract only authorized                 |
+| [Phase3 plan](./phase3-plan.md)                                           | B.2a accepted/merged; B.2b dormant controls under validation                         |
 | [Reviewed Batch3.2B plan](./batch-3-2b-plan.md)                           | Sanitized preserved plan; later integration/ceremonies/UI unapproved                 |
 | [Security foundation ADR-015](./adr-015-security-foundation.md)           | Canonical persistence, exact privileges, isolation, governance, audit/reconciliation |
 | [Batch3.2B.1 validation](./batch-3-2b1-validation.md)                     | Historical foundation/regression evidence                                            |
 | [Preserved B.2 plan](./batch-3-2b2-plan.md)                               | Sanitized local planning deliverable; B.2a only approved                             |
 | [Unmounted provider ADR-016](./adr-016-unmounted-provider-proof.md)       | Actual SDK observation/session boundary; no admission authority                      |
 | [Batch3.2B.2a validation](./batch-3-2b2a-validation.md)                   | Tested runtime facts, limitations, gates and review                                  |
+| [Dormant controls ADR-017](./adr-017-durable-admission-controls.md)       | B.2b gated authority, replay, approval generations and failure model                 |
+| [Batch3.2B.2b validation](./batch-3-2b2b-validation.md)                   | Actual execution ledger; full acceptance and final-HEAD CI pending                   |
 | [Staff security plan](./batch-3-2-security-plan.md)                       | Proposed full boundary; no operational authorization                                 |
 | [Auth spike ADR-011](./adr-011-authentication-spike-provider.md)          | Exact provider/version and isolated evaluation scope                                 |
 | [Session/MFA ADR-012](./adr-012-staff-session-and-mfa.md)                 | Admission, expiration and recovery restrictions                                      |

@@ -22,6 +22,7 @@ import {
   type FoundationDatabase,
 } from "../security-foundation/database";
 import { runSecurityMigrations } from "../../scripts/security-database";
+import { seedOfflineAdmissionControls } from "../admission-controls/offline-fixture";
 import { createSecurityKernel } from "../../src/server/security/kernel";
 import {
   createUnmountedProvider,
@@ -247,14 +248,14 @@ afterAll(async () => {
 });
 
 describe("canonical unmounted provider and trusted resolver", () => {
-  it("uses exactly the accepted five migrations and no staff/admission seed", async () => {
+  it("uses exactly six canonical migrations and no staff/admission seed", async () => {
     expect(
       (
         await migration.query(
           'SELECT count(*)::int AS count FROM public."_prisma_migrations"',
         )
       ).rows[0].count,
-    ).toBe(5);
+    ).toBe(6);
     expect(
       (await migration.query("SELECT state FROM staff.governance")).rows[0]
         .state,
@@ -1289,6 +1290,10 @@ describe("B.1 boundaries stay closed", () => {
       "INSERT INTO staff.admissions(session_id,user_id,authz_version,mode,authenticated_at,last_seen_at,mfa_at) VALUES($1,$2,$3,'verified',now(),now(),now())",
       [resolved.sessionId, f.userId, version],
     );
+    await seedOfflineAdmissionControls(migration, {
+      userId: f.userId,
+      sessionId: resolved.sessionId,
+    });
     const kernel = createSecurityKernel(owned.staffUrl, async () => {
       const current = await subject.resolveSession(f.jar.header);
       return current.state === "provider-authenticated"

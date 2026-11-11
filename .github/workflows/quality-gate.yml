@@ -316,3 +316,53 @@ jobs:
           path: provider-proof-test-results/proof.xml
           if-no-files-found: warn
           retention-days: 7
+
+  admission-controls:
+    name: Dormant durable MFA admission replay and abuse controls
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CI: "true"
+      # Ephemeral loopback-only CI bootstrap; never an operational credential.
+      SECURITY_TEST_DATABASE_URL: postgresql://bookstore_security_bootstrap:${{ github.run_id }}-${{ github.run_attempt }}-disposable@127.0.0.1:55437/bookstore_security_ci
+    services:
+      postgres:
+        image: postgres:18.3-alpine
+        env:
+          POSTGRES_USER: bookstore_security_bootstrap
+          POSTGRES_PASSWORD: ${{ github.run_id }}-${{ github.run_attempt }}-disposable
+          POSTGRES_DB: bookstore_security_ci
+        ports:
+          - "127.0.0.1:55437:5432"
+        options: >-
+          --health-cmd "pg_isready -U bookstore_security_bootstrap -d bookstore_security_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Check out gated dormant controls
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Set up pnpm
+        uses: pnpm/action-setup@9bbca1e9dc2902adb87e8780fe5c98796985a62d # v6.1.1
+        with:
+          version: 11.7.0
+          run_install: false
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.19.0
+          cache: pnpm
+      - name: Install exact locked dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Verify real SDK durable evidence replay restart races and privileges
+        run: pnpm admission:controls:test --reporter=default --reporter=junit --outputFile=provider-proof-test-results/admission.xml
+      - name: Retain only sanitized dormant controls evidence
+        if: ${{ always() && !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: admission-controls-evidence
+          path: provider-proof-test-results/admission.xml
+          if-no-files-found: warn
+          retention-days: 7

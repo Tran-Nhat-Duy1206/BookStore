@@ -81,6 +81,7 @@ beforeAll(async () => {
     auth: db.authUrl,
     staff: db.staffUrl,
     worker: db.workerUrl,
+    verifier: db.verifierUrl,
   };
   for (const purpose of purposes) {
     roles[purpose] = new URL(urls[purpose]).username;
