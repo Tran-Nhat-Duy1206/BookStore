@@ -737,7 +737,18 @@ async function createProviderCore(
       if (!jar) return bad();
       try {
         await checkProfiles();
+        const prior = await rawSession(jar);
         const native = await call("/sign-out", {}, jar);
+        // SDK success/cookie deletion alone is not committed deletion evidence:
+        // the maintained adapter may swallow a session-delete failure.
+        if (prior) {
+          const retained = await authPool.query<{ retained: boolean }>(
+            'SELECT EXISTS(SELECT 1 FROM identity."Session" WHERE id=$1 AND "userId"=$2) AS retained',
+            [prior.session.id, prior.user.id],
+          );
+          if (retained.rows[0]?.retained !== false)
+            return bad(503, "provider-unavailable");
+        }
         return result(
           staticResponse(
             native.response.status >= 500 ? 503 : native.response.status,
@@ -763,6 +774,8 @@ async function createProviderCore(
   });
   return {
     api,
+    // Static scope metadata only. No provider context, SDK methods or credentials.
+    cookieNames: Object.freeze([...allowedNames].sort()),
     canonicalCookie(value: unknown): string | null {
       const jar = cookies(value);
       return jar ? header(jar) : null;
@@ -968,6 +981,37 @@ export async function createDormantAdmissionControls(
     );
   }
   return Object.freeze({
+    cookieNames: core.cookieNames,
+    transportSupported: authority.transportSupported,
+    async reserveTransport() {
+      if (closed)
+        return Object.freeze({ allowed: false, reason: "unavailable" });
+      return authority.reserveTransport();
+    },
+    async signOut(cookieHeader: unknown): Promise<DormantControlOperation> {
+      if (closed) return unavailable();
+      const cookie = core.canonicalCookie(cookieHeader);
+      if (cookie === null) return denied("unauthenticated");
+      // Denial-only cancellation commits BEFORE native deletion. No SDK work or
+      // second-client calls occur while holding governance/row locks. Empty jars
+      // have no presented context; do not give SQL an empty/broad cancellation.
+      let cancelled = cookie.length === 0;
+      if (cookie) {
+        try {
+          cancelled = (await authority.cancelTransport(cookie)).allowed;
+        } catch {
+          cancelled = false;
+        }
+      }
+      const native = await core.api.signOut(cookie);
+      const allowed = cancelled && native.response.ok;
+      return controlOperation(
+        allowed,
+        allowed ? "allowed" : "unavailable",
+        allowed ? "dormant-signed-out" : "dormant-denied",
+        native.response.headers.getSetCookie(),
+      );
+    },
     async password(
       email: unknown,
       password: unknown,

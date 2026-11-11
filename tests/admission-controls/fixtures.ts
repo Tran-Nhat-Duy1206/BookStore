@@ -288,8 +288,8 @@ export class ControlFixtures {
     const migrations = await this.migration.query<{ count: number }>(
       "SELECT count(*)::integer AS count FROM public._prisma_migrations WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL",
     );
-    if (migrations.rows[0]?.count !== 6)
-      throw new Error("Expected exactly six canonical migrations.");
+    if (migrations.rows[0]?.count !== 7)
+      throw new Error("Expected exactly seven canonical migrations.");
     await stage("governance-bootstrap", () =>
       this.migration.query(
         "UPDATE staff.governance SET state='bootstrap' WHERE singleton",

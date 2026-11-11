@@ -77,6 +77,10 @@ const controlStaffFunctions = [
   "staff.finalize_control(text,text,text)",
   "staff.touch_control(text,text,bigint)",
 ];
+const transportStaffFunctions = [
+  "staff.reserve_transport_request()",
+  "staff.cancel_transport_context(text)",
+];
 const verifierFunctions = [
   "control_private.clock_probe()",
   "control_private.prepare_password(text,text)",
@@ -527,6 +531,27 @@ export async function createFoundationDatabase(): Promise<FoundationDatabase> {
                   "SELECT to_regnamespace('control_private') IS NOT NULL AS present",
                 )
               ).rows[0]?.present === true;
+            const transportCatalog = await admin.query<{
+              present: number;
+              safe: boolean;
+            }>(
+              `SELECT count(*)::int AS present,coalesce(bool_and(
+                p.prosecdef AND p.prokind='f' AND p.prorettype=3802
+                AND p.proconfig=ARRAY['search_path=pg_catalog']::text[]
+                AND p.proargtypes::text=CASE p.proname
+                  WHEN 'reserve_transport_request' THEN ''
+                  WHEN 'cancel_transport_context' THEN '25' END
+                AND pg_get_userbyid(p.proowner)=ANY($2::text[])),false) AS safe
+               FROM pg_proc p WHERE p.oid=ANY(ARRAY(
+                 SELECT to_regprocedure(signature)::oid FROM unnest($1::text[]) signature))`,
+              [transportStaffFunctions, [roles.migrate, guard]],
+            );
+            const transport = transportCatalog.rows[0]?.present === 2;
+            if (
+              (transportCatalog.rows[0]?.present !== 0 && !transport) ||
+              (transport && (!controls || !transportCatalog.rows[0]?.safe))
+            )
+              throw new Error("Transport function catalog mismatch.");
             const schemas = [
               "public",
               "identity",
@@ -710,6 +735,11 @@ export async function createFoundationDatabase(): Promise<FoundationDatabase> {
                 await admin.query(
                   `GRANT EXECUTE ON FUNCTION ${signature} TO ${staff}`,
                 );
+              if (transport)
+                for (const signature of transportStaffFunctions)
+                  await admin.query(
+                    `GRANT EXECUTE ON FUNCTION ${signature} TO ${staff}`,
+                  );
               for (const signature of controlWorkerFunctions)
                 await admin.query(
                   `GRANT EXECUTE ON FUNCTION ${signature} TO ${worker}`,

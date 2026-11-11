@@ -76,16 +76,27 @@ async function safe<T>(work: () => Promise<T>): Promise<T> {
     let missingConfiguration = false;
     function collect(value: unknown, depth = 0): void {
       if (depth > 5) return;
-      const code = typeof value === "object" && value !== null && "code" in value ? String(value.code) : "";
+      const code =
+        typeof value === "object" && value !== null && "code" in value
+          ? String(value.code)
+          : "";
       if (/^[A-Z0-9]{5}$/.test(code)) states.add(code);
       if (value instanceof Error) {
         const state = /SQLSTATE ([A-Z0-9]{5})/.exec(value.message);
         if (state) states.add(state[1]);
-        const connection = /\(invariant (connection_refused|connection_reset|connection_timeout)\)/.exec(value.message);
+        const connection =
+          /\(invariant (connection_refused|connection_reset|connection_timeout)\)/.exec(
+            value.message,
+          );
         if (connection) transport.add(connection[1]);
-        if (value.message === "SECURITY_TEST_DATABASE_URL is required for the security foundation.") missingConfiguration = true;
+        if (
+          value.message ===
+          "SECURITY_TEST_DATABASE_URL is required for the security foundation."
+        )
+          missingConfiguration = true;
       }
-      if (value instanceof AggregateError) for (const child of value.errors.slice(0, 8)) collect(child, depth + 1);
+      if (value instanceof AggregateError)
+        for (const child of value.errors.slice(0, 8)) collect(child, depth + 1);
     }
     collect(error);
     throw new Error(
@@ -342,7 +353,7 @@ describe("owned additive upgrade from genuinely hardened005", () => {
       const migration = await connect(owned!.migrationUrl);
       try {
         const afterLedger = await ledger(migration);
-        expect(afterLedger.length).toBe(6);
+        expect(afterLedger.length).toBe(7);
         expect(
           afterLedger
             .slice(0, 5)
@@ -355,6 +366,9 @@ describe("owned additive upgrade from genuinely hardened005", () => {
         expect(
           afterLedger[5].migration_name === "006_durable_admission_controls",
         ).toBe(true);
+        expect(afterLedger[6].migration_name).toBe(
+          "007_restricted_https_transport",
+        );
         expect(sameSnapshot(baseline, await dataSnapshot(migration))).toBe(
           true,
         );

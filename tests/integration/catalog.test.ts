@@ -92,6 +92,7 @@ describe("isolated catalog migrations and seed", () => {
       "004_security_identity",
       "005_security_foundation",
       "006_durable_admission_controls",
+      "007_restricted_https_transport",
     ]);
     const tables = await sql.query(
       "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename <> '_prisma_migrations' ORDER BY tablename",
@@ -185,6 +186,7 @@ describe("isolated catalog migrations and seed", () => {
         "004_security_identity",
         "005_security_foundation",
         "006_durable_admission_controls",
+        "007_restricted_https_transport",
       ]);
       expect(await read.getSnapshot()).toStrictEqual(before);
       expect(before).toStrictEqual(fixture);

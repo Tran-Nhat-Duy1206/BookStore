@@ -1,4 +1,4 @@
-import { randomUUID, randomBytes } from "node:crypto";
+import { randomUUID, randomBytes, createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { Client } from "pg";
 import { beforeAll, afterAll, describe, expect, it } from "vitest";
@@ -227,7 +227,7 @@ afterAll(async () => {
 });
 
 describe("canonical history and dormant initial state", () => {
-  it("replays all six canonical migrations with exactly fourteen public catalog tables", async () => {
+  it("replays all seven canonical migrations with exactly fourteen public catalog tables", async () => {
     const result = await main.migration.query(
       'SELECT migration_name FROM public."_prisma_migrations" ORDER BY migration_name',
     );
@@ -238,6 +238,7 @@ describe("canonical history and dormant initial state", () => {
       "004_security_identity",
       "005_security_foundation",
       "006_durable_admission_controls",
+      "007_restricted_https_transport",
     ]);
     expect(
       (
@@ -1219,43 +1220,63 @@ describe("upgrade from accepted main without catalog mutation", () => {
     try {
       await seedCatalog(client);
       const before = await client.product.findMany({ orderBy: { id: "asc" } });
-      // Resolve existing reviewed migration checksums through the actual Prisma CLI, then deploy only the additive suffix.
-      for (const name of [
+      // Historical DDL is already applied. Record its independent checksums
+      // through the actual CLI concurrently, retaining Prisma's own locking.
+      // Keep the original timeout and BOTH idempotent deploy/data assertions.
+      const historical = [
         "001_catalog_base",
         "002_catalog_invariants",
         "003_catalog_identity_checks",
-      ]) {
-        const { spawn } = await import("node:child_process");
-        await new Promise<void>((resolveRun, reject) => {
-          const child = spawn(
-            process.execPath,
-            [
-              "node_modules/prisma/build/index.js",
-              "migrate",
-              "resolve",
-              "--applied",
-              name,
-              "--config",
-              "prisma.security.config.ts",
-            ],
-            {
-              cwd: process.cwd(),
-              stdio: "inherit",
-              env: {
-                ...process.env,
-                SECURITY_MIGRATION_DATABASE_URL: db.migrationUrl,
+      ];
+      await Promise.all(
+        historical.map(async (name) => {
+          const { spawn } = await import("node:child_process");
+          await new Promise<void>((resolveRun, reject) => {
+            const child = spawn(
+              process.execPath,
+              [
+                "node_modules/prisma/build/index.js",
+                "migrate",
+                "resolve",
+                "--applied",
+                name,
+                "--config",
+                "prisma.security.config.ts",
+              ],
+              {
+                cwd: process.cwd(),
+                stdio: "inherit",
+                env: {
+                  ...process.env,
+                  SECURITY_MIGRATION_DATABASE_URL: db.migrationUrl,
+                },
               },
-            },
-          );
-          child.once("error", () =>
-            reject(new Error("Synthetic upgrade resolve unavailable")),
-          );
-          child.once("exit", (code) =>
-            code === 0
-              ? resolveRun()
-              : reject(new Error("Synthetic upgrade resolve failed")),
-          );
-        });
+            );
+            child.once("error", () =>
+              reject(new Error("Synthetic upgrade resolve unavailable")),
+            );
+            child.once("exit", (code) =>
+              code === 0
+                ? resolveRun()
+                : reject(new Error("Synthetic upgrade resolve failed")),
+            );
+          });
+        }),
+      );
+      const recorded = await sql.query<{
+        migration_name: string;
+        checksum: string;
+      }>(
+        "SELECT migration_name,checksum FROM public._prisma_migrations ORDER BY migration_name",
+      );
+      expect(recorded.rows.length).toBe(3);
+      for (const [index, name] of historical.entries()) {
+        const bytes = await readFile(`prisma/migrations/${name}/migration.sql`);
+        expect(
+          recorded.rows[index].migration_name === name &&
+            recorded.rows[index].checksum ===
+              createHash("sha256").update(bytes).digest("hex"),
+        ).toBe(true);
       }
       await runSecurityMigrations(db.migrationUrl);
       await runSecurityMigrations(db.migrationUrl);
