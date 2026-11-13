@@ -591,11 +591,20 @@ describe("mandatory actual Linux Chromium Next RSC Action TLS acceptance", () =>
     async () => {
       const principal = await fx.createPrincipal();
       await login(principal);
+      const before = (
+        await fx.migration.query<{ session_id: string }>(
+          "SELECT session_id FROM staff.admissions WHERE user_id=$1 AND mode='full'",
+          [principal.userId],
+        )
+      ).rows;
+      expect(before.length === 1).toBe(true);
       await nativeClick("revoke-self");
+      // Accepted005 revoke_admission269 updates the SAME row to mode=revoked;
+      // it intentionally retains lineage instead of deleting controls/session.
       const retired = (
         await fx.migration.query<{ safe: boolean }>(
-          "SELECT NOT EXISTS(SELECT 1 FROM staff.admissions WHERE user_id=$1) AND NOT EXISTS(SELECT 1 FROM control_private.session_controls WHERE user_id=$1) AS safe",
-          [principal.userId],
+          "SELECT EXISTS(SELECT 1 FROM staff.admissions WHERE user_id=$1 AND session_id=$2 AND mode='revoked') AND NOT EXISTS(SELECT 1 FROM staff.admissions WHERE user_id=$1 AND mode<>'revoked') AS safe",
+          [principal.userId, before[0].session_id],
         )
       ).rows[0]?.safe;
       expect(retired === true).toBe(true);
