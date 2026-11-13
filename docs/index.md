@@ -30,7 +30,7 @@ Bộ tài liệu tiếng Việt cho dự án BookStore chính thức tại `E:\B
 | [Phát triển và kiểm thử](./development.md)                                | Toolchain, scripts thực tế, CI và cách tái tạo evidence                                  |
 | [Dependency và môi trường](./dependencies.md)                             | Snapshot phiên bản thực do agent điều phối cung cấp, tương thích và nợ tooling           |
 | [Quyết định kiến trúc](./adrs.md)                                         | ADR và hệ quả                                                                            |
-| [Phase3 plan](./phase3-plan.md)                                           | B.2b accepted/merged; B.2c isolated HTTPS TEST transport under validation                |
+| [Phase3 plan](./phase3-plan.md)                                           | B.2c accepted/merged; B.2d isolated Next security TEST integration in validation         |
 | [Reviewed Batch3.2B plan](./batch-3-2b-plan.md)                           | Sanitized preserved plan; later integration/ceremonies/UI unapproved                     |
 | [Security foundation ADR-015](./adr-015-security-foundation.md)           | Canonical persistence, exact privileges, isolation, governance, audit/reconciliation     |
 | [Batch3.2B.1 validation](./batch-3-2b1-validation.md)                     | Historical foundation/regression evidence                                                |
@@ -41,6 +41,8 @@ Bộ tài liệu tiếng Việt cho dự án BookStore chính thức tại `E:\B
 | [Batch3.2B.2b validation](./batch-3-2b2b-validation.md)                   | Frozen local ledger; accepted PR#6/exact seven-job CI42844425720 recorded separately     |
 | [Restricted HTTPS ADR-018](./adr-018-restricted-https-transport.md)       | B.2c default-off test listener, exact manifest/Origin/CSRF/cookie/cancellation/TLS trust |
 | [Batch3.2B.2c validation](./batch-3-2b2c-validation.md)                   | Actual execution and limitations; mandatory Linux browser and exact eight-job acceptance |
+| [Isolated Next ADR-019](./adr-019-isolated-next-security-integration.md)  | Before-code trust/execution boundaries; no storefront activation or second MFA issuer    |
+| [Batch3.2B.2d validation](./batch-3-2b2d-validation.md)                   | Actual staged execution, failures/corrections and pending exact nine-job acceptance      |
 | [Staff security plan](./batch-3-2-security-plan.md)                       | Proposed full boundary; no operational authorization                                     |
 | [Auth spike ADR-011](./adr-011-authentication-spike-provider.md)          | Exact provider/version and isolated evaluation scope                                     |
 | [Session/MFA ADR-012](./adr-012-staff-session-and-mfa.md)                 | Admission, expiration and recovery restrictions                                          |
