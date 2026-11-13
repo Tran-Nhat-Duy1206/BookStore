@@ -23,5 +23,9 @@
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts"
   ],
-  "exclude": ["node_modules", "experiments/auth-spike"]
+  "exclude": [
+    "node_modules",
+    "experiments/auth-spike",
+    "experiments/next-security"
+  ]
 }

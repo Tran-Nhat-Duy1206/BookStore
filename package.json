@@ -43,7 +43,13 @@
     "admission:controls:test": "pnpm db:generate && vitest run --config vitest.admission-controls.config.ts",
     "transport:https:test": "pnpm db:generate && vitest run --config vitest.https-transport.config.ts",
     "transport:browser:test": "pnpm db:generate && vitest run --config vitest.https-browser.config.ts",
-    "transport:default-off:test": "tsx scripts/transport-default-off-smoke.ts"
+    "transport:default-off:test": "tsx scripts/transport-default-off-smoke.ts",
+    "next-security:build": "node --import tsx scripts/next-security-build.ts",
+    "next-security:policy:test": "vitest run --config vitest.next-policy.config.ts",
+    "next-security:test": "vitest run --config vitest.next-security.config.ts",
+    "next-security:browser:test": "vitest run --config vitest.next-browser.config.ts",
+    "next-security:reconciliation:test": "vitest run --config vitest.reconciliation.config.ts",
+    "next-security:default-off:test": "node --import tsx scripts/next-security-default-off.ts"
   },
   "dependencies": {
     "@fontsource/be-vietnam-pro": "5.3.0",
