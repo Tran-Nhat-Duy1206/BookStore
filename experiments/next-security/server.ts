@@ -37,7 +37,7 @@ const privateHeaders = {
   "cache-control": "private, no-store",
   pragma: "no-cache",
   "x-content-type-options": "nosniff",
-  "referrer-policy": "no-referrer",
+  "referrer-policy": "same-origin",
   "cross-origin-resource-policy": "same-origin",
   connection: "close",
 };

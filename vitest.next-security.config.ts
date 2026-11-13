@@ -17,6 +17,7 @@ export default defineConfig({
       "tests/next-security/smoke.test.ts",
       "tests/next-security/transport.test.ts",
       "tests/next-security/lifecycle.test.ts",
+      "tests/next-security/commit-abort.test.ts",
     ],
     fileParallelism: false,
     maxWorkers: 1,

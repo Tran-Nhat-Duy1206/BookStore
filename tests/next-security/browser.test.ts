@@ -229,12 +229,60 @@ async function stamp(userId: string) {
 }
 async function nativeClick(purpose: "probe" | "revoke-self" | "sign-out") {
   const cdp = await context.newCDPSession(page);
-  await cdp.send("Emulation.setScriptExecutionDisabled", { value: true });
-  await page.reload({ waitUntil: "domcontentloaded" });
-  await Promise.all([
-    page.waitForNavigation({ waitUntil: "domcontentloaded" }),
-    page.locator(`form[data-native="${purpose}"] button`).click(),
-  ]);
+  try {
+    await cdp.send("Emulation.setScriptExecutionDisabled", { value: true });
+    await page.reload({ waitUntil: "domcontentloaded" });
+    const [response, request] = await Promise.all([
+      page.waitForNavigation({ waitUntil: "domcontentloaded" }),
+      page.waitForRequest(
+        (request) =>
+          request.method() === "POST" &&
+          request.url() === `${origin}${SECURITY_PAGE}`,
+      ),
+      page.locator(`form[data-native="${purpose}"] button`).click(),
+    ]);
+    const headers = await request.allHeaders();
+    const exact = headers.origin === origin,
+      opaque = headers.origin === "null",
+      status = response?.status() ?? 0;
+    if (!exact || opaque || status !== 200)
+      console.info(
+        `Synthetic native form diagnostic exactOrigin=${exact}, opaqueOrigin=${opaque}, status=${status}.`,
+      );
+    expect(exact && !opaque && status === 200).toBe(true);
+  } finally {
+    await cdp.send("Emulation.setScriptExecutionDisabled", { value: false });
+    await cdp.detach();
+  }
+}
+async function enhancedClick(purpose: "probe" | "sign-out") {
+  const responsePromise = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      response.url() === `${origin}${SECURITY_PAGE}`,
+  );
+  await page.locator(`[data-enhanced="${purpose}"]`).click();
+  const response = await responsePromise,
+    headers = await response.request().allHeaders();
+  let physical = false,
+    rootLayout = false;
+  try {
+    const tree: unknown = JSON.parse(
+      decodeURIComponent(headers["next-router-state-tree"] ?? ""),
+    );
+    physical = JSON.stringify(tree).includes("%5F_bookstore_next_security");
+    rootLayout = Array.isArray(tree) && tree[4] === 16;
+  } catch {}
+  const exact = headers.origin === origin,
+    status = response.status();
+  if (status !== 200 || !exact || !physical || !rootLayout)
+    console.info(
+      `Synthetic enhanced form diagnostic exactOrigin=${exact}, physicalSegment=${physical}, rootLayout16=${rootLayout}, status=${status}.`,
+    );
+  expect(status === 200 && exact && physical && rootLayout).toBe(true);
+  await page
+    .locator('[data-action-outcome="completed-without-application-admission"]')
+    .waitFor();
 }
 async function directForm(
   purpose: string,
@@ -279,7 +327,11 @@ beforeAll(() =>
         plainCookie ||= !!req.headers.cookie;
         plainRequests++;
       }
-      res.writeHead(403, {
+      const foreignDocument =
+        req.method === "GET" &&
+        req.url === "/" &&
+        req.headers.host === `${foreign}:3464`;
+      res.writeHead(foreignDocument ? 200 : 403, {
         "content-type": "text/html",
         "cache-control": "private, no-store",
         connection: "close",
@@ -454,10 +506,12 @@ describe("mandatory actual Linux Chromium Next RSC Action TLS acceptance", () =>
     "withholds Secure cookies from genuine invalid-host plaintext",
     async () => {
       await login(await fx.createPrincipal());
-      await page.goto(`http://${NEXT_HOST}:3464/`, {
+      const response = await page.goto(`http://${NEXT_HOST}:3464/`, {
         waitUntil: "domcontentloaded",
       });
-      expect(plainRequests > 0 && !plainCookie).toBe(true);
+      expect(
+        response?.status() === 403 && plainRequests > 0 && !plainCookie,
+      ).toBe(true);
     },
   );
   scenario(
@@ -502,12 +556,7 @@ describe("mandatory actual Linux Chromium Next RSC Action TLS acceptance", () =>
       const principal = await fx.createPrincipal();
       await login(principal);
       const before = await stamp(principal.userId);
-      await page.locator('[data-enhanced="probe"]').click();
-      await page
-        .locator(
-          '[data-action-outcome="completed-without-application-admission"]',
-        )
-        .waitFor();
+      await enhancedClick("probe");
       expect(
         JSON.stringify(await stamp(principal.userId)) ===
           JSON.stringify(before),
@@ -540,10 +589,19 @@ describe("mandatory actual Linux Chromium Next RSC Action TLS acceptance", () =>
   scenario(
     "revalidates native self-revocation then denies retained browser cookie",
     async () => {
-      await login(await fx.createPrincipal());
+      const principal = await fx.createPrincipal();
+      await login(principal);
       await nativeClick("revoke-self");
-      await page.reload({ waitUntil: "domcontentloaded" });
-      expect(await admitted()).toBe(false);
+      const retired = (
+        await fx.migration.query<{ safe: boolean }>(
+          "SELECT NOT EXISTS(SELECT 1 FROM staff.admissions WHERE user_id=$1) AND NOT EXISTS(SELECT 1 FROM control_private.session_controls WHERE user_id=$1) AS safe",
+          [principal.userId],
+        )
+      ).rows[0]?.safe;
+      expect(retired === true).toBe(true);
+      expect((await post("session")).status === 200).toBe(false);
+      const response = await page.reload({ waitUntil: "domcontentloaded" });
+      expect(response?.status() === 200 && !(await admitted())).toBe(true);
     },
   );
   scenario(
@@ -551,12 +609,7 @@ describe("mandatory actual Linux Chromium Next RSC Action TLS acceptance", () =>
     async () => {
       await login(await fx.createPrincipal());
       const copied = await ownedCookies();
-      await page.locator('[data-enhanced="sign-out"]').click();
-      await page
-        .locator(
-          '[data-action-outcome="completed-without-application-admission"]',
-        )
-        .waitFor();
+      await enhancedClick("sign-out");
       expect((await ownedCookies()).length).toBe(0);
       await context.addCookies(copied);
       await page.reload({ waitUntil: "domcontentloaded" });
@@ -655,9 +708,15 @@ describe("mandatory actual Linux Chromium Next RSC Action TLS acceptance", () =>
           "SELECT coalesce(sum(used),0)::text n FROM control_private.budgets",
         )
       ).rows[0].n;
-      await page.goto(`http://${foreign}:3464/`, {
+      const foreignResponse = await page.goto(`http://${foreign}:3464/`, {
         waitUntil: "domcontentloaded",
       });
+      expect(
+        foreignResponse?.status() === 200 &&
+          (await page.evaluate(
+            () => location.origin === `http://${location.host}`,
+          )),
+      ).toBe(true);
       const cdp = await context.newCDPSession(page);
       await cdp.send("Network.enable");
       let options = false,

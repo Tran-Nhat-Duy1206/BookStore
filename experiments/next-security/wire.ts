@@ -163,6 +163,10 @@ const headerNames = new Set([
   "next-router-segment-prefetch",
   "next-url",
 ]);
+const denialPreflightHeaders = new Set([
+  "access-control-request-method",
+  "access-control-request-headers",
+]);
 export function nextRawHeaders(
   req: IncomingMessage,
 ): Map<string, string> | null {
@@ -172,12 +176,27 @@ export function nextRawHeaders(
     const name = req.rawHeaders[i].toLowerCase(),
       value = req.rawHeaders[i + 1];
     if (
-      !headerNames.has(name) ||
+      (!headerNames.has(name) &&
+        !(req.method === "OPTIONS" && denialPreflightHeaders.has(name))) ||
       headers.has(name) ||
       /[^\x20-\x7e]/.test(value)
     )
       return null;
     headers.set(name, value);
+  }
+  // Recognize ONLY the browser's fixed denial preflight. This never grants CORS:
+  // the outer exact-target method gate must still return 405 before Next/SQL.
+  if (
+    headers.has("access-control-request-method") ||
+    headers.has("access-control-request-headers")
+  ) {
+    if (
+      req.method !== "OPTIONS" ||
+      headers.get("access-control-request-method") !== "POST" ||
+      headers.get("access-control-request-headers") !==
+        "content-type,x-bookstore-csrf"
+    )
+      return null;
   }
   if (headers.has("rsc") && headers.get("rsc") !== "1") return null;
   if (
@@ -193,34 +212,53 @@ export function nextRawHeaders(
   if (headers.has("next-url") && headers.get("next-url") !== SECURITY_PAGE)
     return null;
   const tree = headers.get("next-router-state-tree");
-  if (tree) {
+  if (tree !== undefined) {
     if (tree.length > 2048) return null;
     let count = 0;
+    const segments = ["", "%5F_bookstore_next_security", "__PAGE__"];
+    const refreshMarkers = ["refetch", "inside-shared-layout", "metadata-only"];
     const valid = (value: unknown, depth: number): boolean => {
-      if (++count > 48 || depth > 8) return false;
-      if (value === null || typeof value === "boolean") return true;
-      if (typeof value === "string")
-        return [
-          "",
-          "__bookstore_next_security",
-          "__PAGE__",
-          "refetch",
-          SECURITY_PAGE,
-        ].includes(value);
-      if (Array.isArray(value))
-        return (
-          value.length <= 6 && value.every((part) => valid(part, depth + 1))
-        );
-      return (
-        !!value &&
-        typeof value === "object" &&
-        Object.keys(value).length <= 1 &&
-        Object.entries(value).every(
-          ([key, part]) => key === "children" && valid(part, depth + 1),
-        )
-      );
+      if (++count > 48 || depth > 8 || depth >= segments.length) return false;
+      if (
+        !Array.isArray(value) ||
+        value.length < 2 ||
+        value.length > 5 ||
+        value[0] !== segments[depth]
+      )
+        return false;
+      const routes: unknown = value[1];
+      if (!routes || typeof routes !== "object" || Array.isArray(routes))
+        return false;
+      const entries = Object.entries(routes);
+      if (depth === 2) {
+        if (entries.length !== 0) return false;
+      } else if (
+        entries.length !== 1 ||
+        entries[0][0] !== "children" ||
+        !valid(entries[0][1], depth + 1)
+      )
+        return false;
+      // Pinned prepareFlightRouterStateForRequest strips refresh state/URLs and
+      // renderedSearch. Only its null placeholder may occupy slot 2.
+      if (value.length >= 3 && value[2] !== null) return false;
+      if (
+        value.length >= 4 &&
+        value[3] !== null &&
+        !refreshMarkers.includes(value[3])
+      )
+        return false;
+      // This build has one root layout, no loading/PPR/cache-component hints.
+      // Numeric hints are accepted ONLY in their documented tuple position.
+      if (
+        value.length >= 5 &&
+        value[4] !== null &&
+        value[4] !== (depth === 0 ? 16 : 0)
+      )
+        return false;
+      return true;
     };
     try {
+      // Decode the complete header ONCE. Never decode a physical segment again.
       if (!valid(JSON.parse(decodeURIComponent(tree)), 0)) return null;
     } catch {
       return null;

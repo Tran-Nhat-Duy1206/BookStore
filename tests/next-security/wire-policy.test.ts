@@ -717,16 +717,148 @@ describe("bounded native unbound Action wire subset (no Action execution)", () =
   });
 });
 
-function parsedHeaders(pairs: readonly string[]): Map<string, string> | null {
+function parsedHeaders(
+  pairs: readonly string[],
+  method?: string,
+): Map<string, string> | null {
   const socket = new Socket();
   try {
     const request = new IncomingMessage(socket);
+    if (method !== undefined) request.method = method;
     request.rawHeaders = [...pairs];
     return nextRawHeaders(request);
   } finally {
     socket.destroy();
   }
 }
+const requestedMethodName = "Access-Control-Request-Method";
+const requestedHeadersName = "Access-Control-Request-Headers";
+function denialPreflight(
+  method = "POST",
+  headers = "content-type,x-bookstore-csrf",
+) {
+  return [requestedMethodName, method, requestedHeadersName, headers];
+}
+describe("OPTIONS denial preflight metadata grammar only (never CORS approval)", () => {
+  it("recognizes exact browser metadata so the outer method gate can return 405", () => {
+    const headers = parsedHeaders(
+      [
+        "Host",
+        "bookstore-transport.invalid:3463",
+        "Origin",
+        "http://foreign-transport.invalid:3464",
+        ...denialPreflight(),
+      ],
+      "OPTIONS",
+    );
+    expect(
+      headers instanceof Map &&
+        headers.get("access-control-request-method") === "POST" &&
+        headers.get("access-control-request-headers") ===
+          "content-type,x-bookstore-csrf",
+    ).toBe(true);
+  });
+  it("does not require preflight metadata for an ordinary OPTIONS method denial", () => {
+    expect(
+      parsedHeaders(
+        ["Host", "bookstore-transport.invalid:3463"],
+        "OPTIONS",
+      ) instanceof Map,
+    ).toBe(true);
+  });
+  for (const method of ["GET", "POST", "HEAD", "PATCH"]) {
+    it(`rejects denial-only preflight headers on ${method}`, () => {
+      expect(parsedHeaders(denialPreflight(), method)).toBeNull();
+    });
+  }
+  for (const pairs of [
+    [requestedMethodName, "POST"],
+    [requestedHeadersName, "content-type,x-bookstore-csrf"],
+  ]) {
+    it(`rejects incomplete preflight metadata ${pairs[0]}`, () => {
+      expect(parsedHeaders(pairs, "OPTIONS")).toBeNull();
+    });
+  }
+  for (const method of [
+    "GET",
+    "OPTIONS",
+    "post",
+    "POST,DELETE",
+    " POST",
+    "POST ",
+    "",
+  ]) {
+    it(`rejects unsupported requested method fixture ${method.length}`, () => {
+      expect(parsedHeaders(denialPreflight(method), "OPTIONS")).toBeNull();
+    });
+  }
+  for (const headers of [
+    "x-bookstore-csrf,content-type",
+    "Content-Type,x-bookstore-csrf",
+    "content-type, x-bookstore-csrf",
+    "content-type",
+    "content-type,x-bookstore-csrf,x-actor",
+    "content-type,x-bookstore-csrf,x-forwarded-for",
+    "*",
+    "",
+    "x".repeat(8193),
+    "content-type,\nx-bookstore-csrf",
+    "\u0000",
+  ]) {
+    it(`rejects noncanonical or unknown requested headers fixture ${headers.length}`, () => {
+      expect(
+        parsedHeaders(denialPreflight("POST", headers), "OPTIONS"),
+      ).toBeNull();
+    });
+  }
+  it("rejects a duplicate requested method despite identical values", () => {
+    expect(
+      parsedHeaders(
+        [...denialPreflight(), "access-control-request-method", "POST"],
+        "OPTIONS",
+      ),
+    ).toBeNull();
+  });
+  it("rejects a duplicate requested-header list despite identical values", () => {
+    expect(
+      parsedHeaders(
+        [
+          ...denialPreflight(),
+          "access-control-request-headers",
+          "content-type,x-bookstore-csrf",
+        ],
+        "OPTIONS",
+      ),
+    ).toBeNull();
+  });
+});
+
+type RouterFixture = [unknown, Record<string, RouterFixture>, ...unknown[]];
+function routerFixture(): RouterFixture {
+  return [
+    "",
+    {
+      children: ["%5F_bookstore_next_security", { children: ["__PAGE__", {}] }],
+    },
+    null,
+    null,
+    16,
+  ];
+}
+function changedRouterFixture(
+  change: (tree: RouterFixture) => void,
+): RouterFixture {
+  const tree = routerFixture();
+  change(tree);
+  return tree;
+}
+function routerHeaders(tree: unknown): Map<string, string> | null {
+  return parsedHeaders([
+    "Next-Router-State-Tree",
+    encodeURIComponent(JSON.stringify(tree)),
+  ]);
+}
+
 describe("raw-header grammar only (not Origin authorization)", () => {
   it("accepts bounded known headers without claiming an Origin decision", () => {
     const result = parsedHeaders([
@@ -799,20 +931,7 @@ describe("raw-header grammar only (not Origin authorization)", () => {
       expect(parsedHeaders([name, value])).toBeNull());
   }
   it("accepts the designated-page router tree and bounded public framework markers", () => {
-    const tree = encodeURIComponent(
-      JSON.stringify([
-        "",
-        {
-          children: [
-            "__bookstore_next_security",
-            { children: ["__PAGE__", {}] },
-          ],
-        },
-        null,
-        null,
-        true,
-      ]),
-    );
+    const tree = encodeURIComponent(JSON.stringify(routerFixture()));
     expect(
       parsedHeaders([
         "RSC",
@@ -828,4 +947,188 @@ describe("raw-header grammar only (not Origin authorization)", () => {
       ]) instanceof Map,
     ).toBe(true);
   });
+  it("accepts omitted optional router tuple fields without accepting other routes", () => {
+    expect(
+      routerHeaders(
+        changedRouterFixture((tree) => {
+          tree.length = 2;
+        }),
+      ) instanceof Map,
+    ).toBe(true);
+  });
+  it("accepts only build-positioned null and zero child hints", () => {
+    const tree = changedRouterFixture((root) => {
+      root[4] = null;
+      root[1].children.push(null, null, 0);
+      root[1].children[1].children.push(null, null, 0);
+    });
+    expect(routerHeaders(tree) instanceof Map).toBe(true);
+  });
+  for (const marker of ["refetch", "inside-shared-layout", "metadata-only"]) {
+    it(`accepts documented refresh marker ${marker} only in slot three`, () => {
+      const tree = changedRouterFixture((root) => {
+        root[3] = marker;
+        root[1].children.push(null, marker, 0);
+      });
+      expect(routerHeaders(tree) instanceof Map).toBe(true);
+    });
+  }
+  for (const bit of [0, 1, 32, 1024, -1, 16.5, true, "16"]) {
+    it(`rejects wrong root hint fixture ${String(bit)}`, () => {
+      expect(
+        routerHeaders(
+          changedRouterFixture((tree) => {
+            tree[4] = bit;
+          }),
+        ),
+      ).toBeNull();
+    });
+  }
+  const wrongTrees: Array<[string, unknown]> = [
+    [
+      "decoded physical segment alias",
+      changedRouterFixture((tree) => {
+        tree[1].children[0] = "__bookstore_next_security";
+      }),
+    ],
+    [
+      "double-encoded physical segment alias",
+      changedRouterFixture((tree) => {
+        tree[1].children[0] = "%255F_bookstore_next_security";
+      }),
+    ],
+    [
+      "physical segment in root position",
+      changedRouterFixture((tree) => {
+        tree[0] = "%5F_bookstore_next_security";
+      }),
+    ],
+    [
+      "unknown leaf",
+      changedRouterFixture((tree) => {
+        tree[1].children[1].children[0] = "__DEFAULT__";
+      }),
+    ],
+    [
+      "root bit on child",
+      changedRouterFixture((tree) => {
+        tree[1].children.push(null, null, 16);
+      }),
+    ],
+    [
+      "root bit on leaf",
+      changedRouterFixture((tree) => {
+        tree[1].children[1].children.push(null, null, 16);
+      }),
+    ],
+    [
+      "hint in refresh-state slot",
+      changedRouterFixture((tree) => {
+        tree[2] = 16;
+      }),
+    ],
+    [
+      "hint in marker slot",
+      changedRouterFixture((tree) => {
+        tree[3] = 16;
+      }),
+    ],
+    [
+      "hint in removed search slot",
+      changedRouterFixture((tree) => {
+        tree.push(16);
+      }),
+    ],
+    [
+      "removed empty search slot",
+      changedRouterFixture((tree) => {
+        tree.push("");
+      }),
+    ],
+    [
+      "literal same-page URL in stripped refresh state",
+      changedRouterFixture((tree) => {
+        tree[2] = "/__bookstore_next_security";
+      }),
+    ],
+    [
+      "compressed URL state stripped by client",
+      changedRouterFixture((tree) => {
+        tree[2] = ["/__bookstore_next_security", ""];
+      }),
+    ],
+    [
+      "foreign callback in refresh state",
+      changedRouterFixture((tree) => {
+        tree[2] = ["//foreign.invalid", ""];
+      }),
+    ],
+    [
+      "unknown refresh marker",
+      changedRouterFixture((tree) => {
+        tree[3] = "actor";
+      }),
+    ],
+    [
+      "known marker in route position",
+      changedRouterFixture((tree) => {
+        tree[1].children[0] = "refetch";
+      }),
+    ],
+    [
+      "parallel route selector",
+      changedRouterFixture((tree) => {
+        tree[1].other = tree[1].children;
+      }),
+    ],
+    [
+      "actor object field",
+      changedRouterFixture((tree) => {
+        tree[1].actor = ["__PAGE__", {}];
+      }),
+    ],
+    [
+      "skipped physical page node",
+      changedRouterFixture((tree) => {
+        tree[1].children = ["__PAGE__", {}];
+      }),
+    ],
+    [
+      "extra leaf child",
+      changedRouterFixture((tree) => {
+        tree[1].children[1].children[1].children = ["__PAGE__", {}];
+      }),
+    ],
+    [
+      "encoded callback segment",
+      changedRouterFixture((tree) => {
+        tree[1].children[0] = "%2f%2fforeign.invalid";
+      }),
+    ],
+    [
+      "nested object instead of hint",
+      changedRouterFixture((tree) => {
+        tree[4] = { role: "Owner" };
+      }),
+    ],
+    ["root primitive", 16],
+    ["root boolean", true],
+    ["root object", { children: routerFixture() }],
+    ["missing children", ["", {}]],
+  ];
+  for (const [name, tree] of wrongTrees) {
+    it(`rejects structural router tree ${name}`, () =>
+      expect(routerHeaders(tree)).toBeNull());
+  }
+  it("decodes the complete router header exactly once", () => {
+    const once = encodeURIComponent(JSON.stringify(routerFixture()));
+    expect(parsedHeaders(["Next-Router-State-Tree", once]) instanceof Map).toBe(
+      true,
+    );
+    expect(
+      parsedHeaders(["Next-Router-State-Tree", encodeURIComponent(once)]),
+    ).toBeNull();
+  });
+  it("rejects an explicitly empty router header", () =>
+    expect(parsedHeaders(["Next-Router-State-Tree", ""])).toBeNull());
 });
