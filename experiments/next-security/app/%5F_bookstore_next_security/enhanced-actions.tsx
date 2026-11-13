@@ -1,10 +1,20 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useSyncExternalStore, useTransition } from "react";
+
+// UI readiness ONLY, never session/MFA/admission evidence or a server argument.
+const subscribeHydration = () => () => {};
+const clientHydrated = () => true;
+const serverHydrated = () => false;
 import { probeAction, revokeSelfAction, signOutAction } from "./actions";
 
 type Nonces = { probe?: string; revokeSelf?: string; signOut: string };
 export default function EnhancedActions({ nonces }: { nonces: Nonces }) {
+  const hydrated = useSyncExternalStore(
+    subscribeHydration,
+    clientHydrated,
+    serverHydrated,
+  );
   const [pending, startTransition] = useTransition();
   const [outcome, setOutcome] = useState("not-requested");
   function invoke(kind: "probe" | "revoke-self" | "sign-out") {
@@ -29,11 +39,14 @@ export default function EnhancedActions({ nonces }: { nonces: Nonces }) {
     });
   }
   return (
-    <section aria-label="Enhanced native action probes">
+    <section
+      aria-label="Enhanced native action probes"
+      data-hydrated={hydrated ? "ready" : "pending"}
+    >
       {nonces.probe ? (
         <button
           type="button"
-          disabled={pending}
+          disabled={pending || !hydrated}
           data-enhanced="probe"
           onClick={() => invoke("probe")}
         >
@@ -43,7 +56,7 @@ export default function EnhancedActions({ nonces }: { nonces: Nonces }) {
       {nonces.revokeSelf ? (
         <button
           type="button"
-          disabled={pending}
+          disabled={pending || !hydrated}
           data-enhanced="revoke-self"
           onClick={() => invoke("revoke-self")}
         >
@@ -52,7 +65,7 @@ export default function EnhancedActions({ nonces }: { nonces: Nonces }) {
       ) : null}
       <button
         type="button"
-        disabled={pending}
+        disabled={pending || !hydrated}
         data-enhanced="sign-out"
         onClick={() => invoke("sign-out")}
       >

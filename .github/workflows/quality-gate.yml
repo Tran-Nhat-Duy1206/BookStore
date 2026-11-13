@@ -435,6 +435,10 @@ jobs:
 
   isolated-next-security:
     name: Isolated Next HTTPS RSC Actions and bounded reconciliation
+    # Do not add heavyweight Next/Chromium work alongside sampled-clock gates.
+    # Still execute after earlier failures: no skipped acceptance to hide them.
+    needs: [frontend, catalog-database, auth-security-spike, auth-spike-full-audit, security-foundation, provider-proof, admission-controls, restricted-https-transport]
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:

@@ -256,6 +256,8 @@ async function nativeClick(purpose: "probe" | "revoke-self" | "sign-out") {
   }
 }
 async function enhancedClick(purpose: "probe" | "sign-out") {
+  // Readiness, not authentication; ONE request only after handlers attach.
+  await page.locator('[data-hydrated="ready"]').waitFor();
   const responsePromise = page.waitForResponse(
     (response) =>
       response.request().method() === "POST" &&
@@ -593,7 +595,7 @@ describe("mandatory actual Linux Chromium Next RSC Action TLS acceptance", () =>
       await login(principal);
       const before = (
         await fx.migration.query<{ session_id: string }>(
-          "SELECT session_id FROM staff.admissions WHERE user_id=$1 AND mode='full'",
+          "SELECT session_id FROM staff.admissions WHERE user_id=$1 AND mode='verified'",
           [principal.userId],
         )
       ).rows;
