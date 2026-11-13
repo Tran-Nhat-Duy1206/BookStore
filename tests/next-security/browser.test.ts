@@ -611,8 +611,16 @@ describe("mandatory actual Linux Chromium Next RSC Action TLS acceptance", () =>
       ).rows[0]?.safe;
       expect(retired === true).toBe(true);
       expect((await post("session")).status === 200).toBe(false);
-      const response = await page.reload({ waitUntil: "domcontentloaded" });
-      expect(response?.status() === 200 && !(await admitted())).toBe(true);
+      // Native Actions return200 without redirects; reload may resubmit the
+      // history POST. This witness must be a NEW protected RSC GET, not replay.
+      const response = await page.goto(`${origin}${SECURITY_PAGE}`, {
+        waitUntil: "domcontentloaded",
+      });
+      expect(
+        response?.request().method() === "GET" &&
+          response.status() === 200 &&
+          !(await admitted()),
+      ).toBe(true);
     },
   );
   scenario(
