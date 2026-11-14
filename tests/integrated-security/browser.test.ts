@@ -3,6 +3,7 @@ import { performance } from "node:perf_hooks";
 import type { Client } from "pg";
 import { chromium, type BrowserContext, type Page } from "@playwright/test";
 import { computeCacheBustingSearchParam } from "next/dist/shared/lib/router/utils/cache-busting-search-param";
+import { prepareFlightRouterStateForRequest } from "next/dist/client/flight-data-helpers";
 import {
   afterAll,
   afterEach,
@@ -196,6 +197,10 @@ async function login(principal: SyntheticPrincipal) {
       (await admitted()),
   ).toBe(true);
   await currentPage().locator('[data-hydrated="ready"]').waitFor();
+  // SAME full-RSC transport and strict model-prop parser as the later denial
+  // assertions. A denied ingress/invalid wire or tree-only shell cannot pass as
+  // a successful guard witness. This runs BEFORE offline state mutations.
+  await rscGuardWithoutNavigation("admitted");
   return code;
 }
 async function heldNativeProbe() {
@@ -259,40 +264,137 @@ async function heldFlightProbeDenied() {
       root,
   ).toBe(true);
 }
-async function rscDeniedWithoutNavigation() {
+async function rscGuardWithoutNavigation(expected: "admitted" | "denied") {
+  // Pinned Next live RSC client sends RSC + a maintained serialized router tree,
+  // NOT Next-Router-Prefetch. A prefetch without loading.tsx can be tree-only
+  // (walk-tree-with-flight-router-state86–103), with no rendered guard at all.
+  const tree = prepareFlightRouterStateForRequest([
+    "",
+    {
+      children: ["%5F_bookstore_next_security", { children: ["__PAGE__", {}] }],
+    },
+    null,
+    "refetch",
+    16,
+  ]);
   const cacheBusting = await computeCacheBustingSearchParam(
-    "1",
     undefined,
     undefined,
+    tree,
     undefined,
   );
+  // With all four cache-key header inputs absent the hash is empty; omitting it
+  // redirects in base-server1467–1481, while empty _rsc fails our raw grammar.
+  // The exact accepted physical refetch tree above yields a matching nonempty
+  // hash without weakening either Next validation or the outer ingress policy.
+  expect(/^[A-Za-z0-9_-]{1,64}$/.test(cacheBusting)).toBe(true);
+  const wire = currentPage()
+    .waitForResponse(
+      (response) =>
+        response.url() === `${origin}${SECURITY_PAGE}?_rsc=${cacheBusting}` &&
+        response.request().method() === "GET" &&
+        response.request().headers()["next-router-state-tree"] === tree,
+    )
+    .then(async (response) => ({
+      noSetCookie: (await response.headerValue("set-cookie")) === null,
+      noLocation: (await response.headerValue("location")) === null,
+    }))
+    .catch(() => null);
   const value = await currentPage().evaluate(
-    async ({ path, cacheBusting }) => {
+    async ({ path, cacheBusting, tree }) => {
       const response = await fetch(`${path}?_rsc=${cacheBusting}`, {
-        headers: { RSC: "1", "Next-Router-Prefetch": "1" },
+        headers: { RSC: "1", "Next-Router-State-Tree": tree },
         credentials: "same-origin",
         redirect: "manual",
       });
       const text = await response.text();
+      let admittedGuards = 0;
+      let deniedGuards = 0;
+      let invalidGuard = false;
+      let validModels = true;
+      // Pinned React Flight default model rows are <hex-id>:<JSON> followed by
+      // newline. Inspect ONLY parsed model props, not HTML or arbitrary token
+      // presence. Module/hint/text/error tagged rows are not model objects.
+      // This is a non-authentication projection assertion, never a Flight/MFA
+      // decoder or issuer; raw content stays private inside this browser call.
+      for (const row of text.split("\n")) {
+        const colon = row.indexOf(":");
+        if (colon < 1 || !/^[a-f0-9]+$/.test(row.slice(0, colon))) continue;
+        const payload = row.slice(colon + 1);
+        if (!payload.startsWith("{") && !payload.startsWith("[")) continue;
+        let model: unknown;
+        try {
+          model = JSON.parse(payload);
+        } catch {
+          validModels = false;
+          continue;
+        }
+        const pending: unknown[] = [model];
+        while (pending.length) {
+          const item = pending.pop();
+          if (!item || typeof item !== "object") continue;
+          if (Array.isArray(item)) {
+            pending.push(...item);
+          } else {
+            const props = item as Record<string, unknown>;
+            if (
+              Object.prototype.hasOwnProperty.call(props, "data-live-guard")
+            ) {
+              if (props["data-live-guard"] === "admitted-test-session")
+                admittedGuards++;
+              else if (props["data-live-guard"] === "denied-test-session")
+                deniedGuards++;
+              else invalidGuard = true;
+            }
+            pending.push(...Object.values(props));
+          }
+        }
+      }
+      const projection =
+        invalidGuard || !validModels
+          ? "invalid"
+          : admittedGuards === 1 && deniedGuards === 0
+            ? "admitted"
+            : deniedGuards === 1 && admittedGuards === 0
+              ? "denied"
+              : admittedGuards > 0 && deniedGuards > 0
+                ? "mixed"
+                : "missing";
       return {
         status: response.status,
-        denied:
-          text.includes("denied-test-session") &&
-          !text.includes("admitted-test-session"),
+        component:
+          response.headers.get("content-type")?.split(";", 1)[0].trim() ===
+          "text/x-component",
+        projection,
+        noAdmittedToken: !text.includes("admitted-test-session"),
+        noDeniedToken: !text.includes("denied-test-session"),
         noStore: response.headers.get("cache-control") === "private, no-store",
         noLocation: !response.headers.has("location"),
         cookieHidden: response.headers.get("set-cookie") === null,
       };
     },
-    { path: SECURITY_PAGE, cacheBusting },
+    { path: SECURITY_PAGE, cacheBusting, tree },
   );
-  expect(
+  const received = await wire;
+  const correct =
     value.status === 200 &&
-      value.denied &&
-      value.noStore &&
-      value.noLocation &&
-      value.cookieHidden,
-  ).toBe(true);
+    value.component &&
+    value.projection === expected &&
+    (expected === "denied" ? value.noAdmittedToken : value.noDeniedToken) &&
+    value.noStore &&
+    value.noLocation &&
+    value.cookieHidden &&
+    received !== null &&
+    received.noSetCookie &&
+    received.noLocation;
+  if (!correct)
+    console.info(
+      `Synthetic full RSC diagnostic expected=${expected}, status=${value.status}, component=${value.component}, projection=${value.projection}, noAdmitted=${value.noAdmittedToken}, noDenied=${value.noDeniedToken}, noStore=${value.noStore}, noLocation=${value.noLocation}, cookieHidden=${value.cookieHidden}, wireObserved=${received !== null}, noSetCookie=${received?.noSetCookie === true}.`,
+    );
+  expect(correct).toBe(true);
+}
+async function rscDeniedWithoutNavigation() {
+  await rscGuardWithoutNavigation("denied");
 }
 async function heldSurfacesDenied() {
   const native = await heldNativeProbe();
@@ -443,14 +545,65 @@ async function withReconcileAuditFault(work: () => Promise<void>) {
   }
 }
 async function lockWitness(sql: string, args: unknown[]) {
-  // Fixed relation/advisory lock observations ONLY; not operation retries/sleeps.
-  const until = performance.now() + 5000;
-  for (let turn = 0; turn < 2000 && performance.now() < until; turn++) {
-    const result = await fx.migration.query<{ observed: boolean }>(sql, args);
-    if (result.rows[0]?.observed === true) return true;
-    await new Promise<void>((resolve) => setImmediate(resolve));
+  // Fixed relation/advisory lock observations ONLY; not SDK/auth retries/sleeps.
+  // Retain BOTH5s/2000queries. A monotonic2ms observer cadence prevents exhausting
+  // the query cap early on a fast DB and reduces pressure on sampled-clock work.
+  const started = performance.now();
+  let queries = 0;
+  let observed = false;
+  let nextQueryAt = started;
+  while (!observed && queries < 2000 && performance.now() - started < 5000) {
+    if (performance.now() >= nextQueryAt) {
+      const result = await fx.migration.query<{ observed: boolean }>(sql, args);
+      queries++;
+      observed =
+        result.rows[0]?.observed === true && performance.now() - started < 5000;
+      nextQueryAt = performance.now() + 2;
+    }
+    if (!observed) await new Promise<void>((resolve) => setImmediate(resolve));
   }
-  return false;
+  return Object.freeze({
+    observed,
+    queries,
+    queryCap: !observed && queries >= 2000,
+    deadline: !observed && performance.now() - started >= 5000,
+  });
+}
+function witnessFailureDiagnostic(
+  phase: "verification" | "verifier-evidence" | "staff-governance",
+  witness: Awaited<ReturnType<typeof lockWitness>>,
+  reply: Awaited<ReturnType<typeof post>> | null | undefined,
+) {
+  // Only fixed public HTTP/state enums and bounded counts/booleans; never raw
+  // body/error/headers/SQL/role/PID/cookie/OTP/configuration or provider records.
+  const status =
+    reply === undefined
+      ? "pending"
+      : reply === null
+        ? "rejected"
+        : [200, 401, 403, 429, 500, 503].includes(reply.status)
+          ? String(reply.status)
+          : "other";
+  const knownStates = [
+    "denied",
+    "unavailable",
+    "rate-limited",
+    "mfa-required",
+    "verified-test-session",
+    "signed-out",
+    "revoked",
+  ];
+  const state =
+    reply === undefined
+      ? "pending"
+      : reply === null
+        ? "rejected"
+        : reply.state !== null && knownStates.includes(reply.state)
+          ? reply.state
+          : "other";
+  console.info(
+    `Synthetic browser lock diagnostic phase=${phase}, queries=${witness.queries}, queryCap=${witness.queryCap}, deadline=${witness.deadline}, replySettled=${reply !== undefined}, status=${status}, state=${state}, safeRoute=${reply != null && safeRoute(reply)}.`,
+  );
 }
 async function closeOwnedProcesses() {
   const browser = context;
@@ -793,7 +946,7 @@ describe("mandatory Linux Chromium B2e integrated denial/continuity evidence", (
           AND $2::integer=ANY(pg_blocking_pids(a.pid))) AS observed`,
           [new URL(fx.owned.authUrl).username, pid],
         );
-        expect(observed).toBe(true);
+        expect(observed.observed).toBe(true);
         // Pinned SDK deletes its transient native Session before creating this
         // Verification challenge. Empty-jar signout never selects Verification.
         expect((await ownedCookies()).length).toBe(0);
@@ -860,6 +1013,7 @@ describe("mandatory Linux Chromium B2e integrated denial/continuity evidence", (
       let created = false;
       let triggered = false;
       let mfa: Promise<Awaited<ReturnType<typeof post>> | null> | undefined;
+      let mfaReply: Awaited<ReturnType<typeof post>> | null | undefined;
       let signOut: Promise<Awaited<ReturnType<typeof post>> | null> | undefined;
       try {
         await assertOwnedMigration();
@@ -882,16 +1036,27 @@ describe("mandatory Linux Chromium B2e integrated denial/continuity evidence", (
           await blocker.query<{ pid: number }>("SELECT pg_backend_pid() pid")
         ).rows[0].pid;
         mfa = post("totp", { code }).then(
-          (value) => value,
-          () => null,
+          (value) => {
+            mfaReply = value;
+            return value;
+          },
+          () => {
+            mfaReply = null;
+            return null;
+          },
         );
-        expect(
-          await lockWitness(
-            `SELECT EXISTS(SELECT 1 FROM pg_stat_activity a WHERE a.datname=current_database()
+        const verifierWitness = await lockWitness(
+          `SELECT EXISTS(SELECT 1 FROM pg_stat_activity a WHERE a.datname=current_database()
         AND a.usename=$1 AND a.wait_event_type='Lock' AND $2::integer=ANY(pg_blocking_pids(a.pid))) AS observed`,
-            [new URL(fx.owned.verifierUrl).username, pid],
-          ),
-        ).toBe(true);
+          [new URL(fx.owned.verifierUrl).username, pid],
+        );
+        if (!verifierWitness.observed)
+          witnessFailureDiagnostic(
+            "verifier-evidence",
+            verifierWitness,
+            mfaReply,
+          );
+        expect(verifierWitness.observed).toBe(true);
         const nativeCommit = await fx.migration.query<{ safe: boolean }>(
           'SELECT count(*)>$2::integer AS safe FROM identity."Session" WHERE "userId"=$1',
           [principal.userId, beforeSessions],
@@ -907,19 +1072,20 @@ describe("mandatory Linux Chromium B2e integrated denial/continuity evidence", (
         // The STAFF ingress/clock operation is queued behind the VERIFIER that is
         // itself waiting on our exact advisory key. This observes one real order;
         // it does NOT force or claim both HTTP response delivery permutations.
-        expect(
-          await lockWitness(
-            `SELECT EXISTS(SELECT 1 FROM pg_stat_activity s JOIN pg_stat_activity v
+        const staffWitness = await lockWitness(
+          `SELECT EXISTS(SELECT 1 FROM pg_stat_activity s JOIN pg_stat_activity v
         ON v.pid=ANY(pg_blocking_pids(s.pid)) WHERE s.datname=current_database() AND v.datname=current_database()
           AND s.usename=$1 AND v.usename=$2 AND s.wait_event_type='Lock'
           AND $3::integer=ANY(pg_blocking_pids(v.pid))) AS observed`,
-            [
-              new URL(fx.owned.staffUrl).username,
-              new URL(fx.owned.verifierUrl).username,
-              pid,
-            ],
-          ),
-        ).toBe(true);
+          [
+            new URL(fx.owned.staffUrl).username,
+            new URL(fx.owned.verifierUrl).username,
+            pid,
+          ],
+        );
+        if (!staffWitness.observed)
+          witnessFailureDiagnostic("staff-governance", staffWitness, mfaReply);
+        expect(staffWitness.observed).toBe(true);
         await blocker.query("SELECT pg_advisory_unlock(624320021::bigint)");
         locked = false;
         const [mfaResult, signOutResult] = await Promise.all([mfa, signOut]);
