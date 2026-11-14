@@ -1,0 +1,72 @@
+# Batch 3.2B.2e — Integrated security acceptance evidence
+
+Status: **WORK IN PROGRESS; NOT B.2e acceptance. No final B.2e SHA/PR/CI claimed.** Branch `feat/phase3-b2b2e-integrated-security-acceptance`, accepted main `aefabf65f1b66d1ece5c7e5729e98a4c617c2669`. Operational authentication remains disabled. No B.3 implementation, accounts, business UI, deployment or paid service.
+
+## 1. Actually verified PR#8 acceptance and merge
+
+Fetched latest remote/main and PR#8. Reviewed HEAD unchanged `ed316f9cf7eb7272a8697e8161ebe194f8c35978`,50expected files/5commits, no reviews/review requests/unresolved threads or conflicts, MERGEABLE/CLEAN and clean tracked tree. Preserved001–007/catalog/storefront/accepted tests/pins/lockfile/override; additive six scripts/exact TS exclusion/generated-only lint ignore. Exact-HEAD [CI43456427336](https://github.com/Tran-Nhat-Duy1206/BookStore/actions/runs/43456427336) all nine actual jobs SUCCESS:
+
+| Gate | Job ID |
+|---|---|
+| Full dependency audit |131991666487|
+| Durable MFA controls |131991666897|
+| SDK compatibility spike |131991666901|
+| Frontend types/lint/unit/build/Chromium |131991666911|
+| Catalog migrations/read parity |131991666921|
+| Unmounted provider contract |131991667016|
+| Foundation/governance/privileges |131991667053|
+| Standalone HTTPS/browser |131991667082|
+| Isolated Next/RSC/Actions/worker/default-off |131993554110|
+
+Actual ninth-job independent full build, Node/browser/worker and ordinary production-build/default-off steps all completed SUCCESS; no failed/skipped steps. Historical sanitized artifacts had173policy/53Node/27Linuxbrowser/17worker and standalone179wire/22Linuxbrowser, all0fail/error/skip, fullaudit0/687. These are BASELINE evidence, not new B.2e passes.
+
+Readied PR#8, normal merged with match-head guard; no squash/rebase/force/admin bypass. Merge `aefabf65f1b66d1ece5c7e5729e98a4c617c2669` parents eaa1aa8f5dd404c47faf85497090460b1c1ade8a/ed316f9cf7eb7272a8697e8161ebe194f8c35978. Merge and reviewed tree both0135a4e858186d1f89d960c7467a0ca6193c4898. Local/origin/remote main synchronized clean; independent B.2e branch created from it.
+
+## 2. Fresh source review and BEFORE-code design
+
+Read full security/B/B.2 plans, ADR011–019 and B.2a–d evidence. [ADR020](./adr-020-integrated-security-acceptance.md) BEFORE implementation separates actual historical behavior, source facts, new required tests, assumptions and unimplemented operations; includes proposed runbook explicitly NOT YET OPERATIONALLY APPROVED and owner policy decisions.
+
+Two fresh independent read-only reviews (provider/SQL and Next/worker) read actual integrated code plus targeted installed pinned SDK/Next source. They ran no tests/build/PG/network and did not certify old CI or completeness. Graph APIs unavailable: bounded Verify source fallback only. Findings:
+
+- **F-01 P2 dormant kernel clock continuity:** denied transaction rolled back its observed frozen clock latch. Ordinary resolver is still null and current Next uses different authority probes: NOT an established current public auth bypass. Reviewed exact three fixed SQL procedures return false BEFORE business DML; after DML they return success or raise. Narrow correction commits only valid explicit nonmutating denial transactions, preserves malformed/exception rollback and honest uncertain-commit classification. No new SQL/grants/credentials/SDK authority.
+- **F-02 P2 native denial audit:** wrong-password/OTP/native PG failure returned without terminal denial-outcome audit. Narrow two-branch bridge uses existing bounded STAFF sink, fixed forbidden/unavailable reason and denied/unavailable outcome, no false provider rollback. SQL-outcome denials are not double-recorded. Other unexecuted post-native deadline/envelope/closing-time terminal-outcome hypotheses are not silently claimed covered.
+- **F-02b P2 reachable post-native session recheck:** independent correction review3624a8a8 found DB failure mapped stale/403 and session deletion race unaudited after genuine native completion. Added BEFORE-extension exact-query phase regressions: actual baseline2/2FAIL after exact phase witnesses (SQL fault403 instead503, deleted SID stale envelope/no terminal outcome). Extended ONLY the settled recheck to the same existing bridge, unavailable→503/unavailable and mismatch→403/denied. Both real-SDK/PG regressions then passed in the31-case run below; no authority/grant change or provider rollback claim.
+- **Evidence gap:** old negative Action forwarding assertions inspected log strings. New cases require actual payload-blind outgoing counters0 and unchanged SQL witness. No exploit was established by the fresh Next/worker source review.
+- Withdrawn hypothesis: metadata-only Session.userAgent/ipAddress UPDATE would create a critical event. Actual005:176 suppresses that update, matching006 retirement tuple. Tests must label real credential source+retirement as compound, or explicitly use a synthetic offline ledger stimulus to isolate pending/blocked guards. No SQL changed to manufacture a source event.
+
+## 3. Current executed ledger
+
+| Command / scope | Actual outcome and limits |
+|---|---|
+| Frozen dependency installation |PASS864ms, pnpm11.7.0; pins/lockfile unchanged. Advertised Prisma8 prerelease ignored.|
+| Root TypeScript/scoped zero-warning ESLint before baseline suites |PASS for new tests/config; repeated after narrow corrections. Full final regression still required.|
+| F-01 first real baseline |7failed: first exact frozen=false establishes F-01; next42501 creating trigger on Guard-owned clock table prevented cleanup and caused later setup cascades. Those six are NOT additional vulnerability evidence. Owned fixture disposed normally.|
+| Fixed offline trigger fixture |Existing supervisor-only bootstrap credential attests exact NEW owned DB/owner/Migrate/Guard markers, actual restricted NOLOGIN Guard and logging; ONLY literal clock-trigger create/drop, no grant/ALTER OWNER/new profile/runtime secret. Cleanup independently attempts exact trigger removal, test-only clock restoration and kernel close.|
+| F-01 repaired real pre-fix baseline |7cases:2PASS/5FAIL, all five failures exact durable frozen=false (initial, nested status/roles/revoke, denial-sink outage). Business-audit rollback and ordinary403 classification preserved.|
+| Synthetic transaction pre-fix baseline |8cases:4PASS/4FAIL; tests label synthetic driver/model faults, NOT SDK/MFA proof. Missing denial commits and unknown/extended denial normalization exposed; existing business COMMIT uncertainty/malformed/exception rollback preservation passed.|
+| F-02 actual native pre-fix baseline |5/5FAIL exactly intended: bad password, bad OTP and actual post-comparison PG fault reached denial delta0 instead1; denial-sink outages returned403 instead503. Burn/charge/native-accounting/no-grant/privacy checks ran before failing outcome assertions.|
+| First post-fix configured run |8syntheticPASS,12real setup-excluded because marker-owned55436 stopped across human resume. NOT20pass. Helper status confirmed no server; started ONLY owned foundation profile and rechecked, no unrelated service.|
+| Post-fix configured run on verified running owned PG |**20/20PASS,0fail/error/skip**:7real SDK/kernel continuity+5real SDK native-denial audit+8separately labeled synthetic transaction/ack/parser faults. Actual normal fixture cleanup. Node/Next/browser/continuity additions remain unexecuted.|
+
+Local Windows evidence above is SDK/PG and explicit synthetic driver faults, NOT browser trust or full B.2e acceptance. Normal scope retains all existing security constraints. No retries/new skips/TLS bypass or security-threshold relaxation. The first setup exclusions are failures, not passing evidence. Only static sanitized JUnit retained in ignored local directories; no private rows/keys/credentials dumped.
+
+Additional actual execution: full root types, full zero-warning ESLint and independent credential-free isolated production Next build PASS before the unfiltered new Node suite. **31/31PASS,0fail/error/skip** across6files:7kernel+5native-audit+2post-native recheck+7realNextHTTPS/worker composition+2continuity/upgrade, plus8explicitly SYNTHETIC transaction faults (23realSDK/PG/HTTPS cases,8synthetic). The seeded accepted-main no-op upgrade preserved exact source/ledger/catalog IDs/full security/ACL hashes. The offline replay-history rollback simulation actually permitted a second real same-code ceremony after ONLY its burn was removed: this verifies the external history assumption/restore LIMIT, NOT safe restore or a supported reset. Node negative corpus showed actual outgoing0/no SQL side effects; same-account mixed sessions and pending/BLOCKED/recorder-outage composition passed. This does not substitute for actual Linux browser or final exact-HEAD CI.
+
+Further executed regression: unchanged foundation/governance/privilege suites **184/184PASS**, unchanged unit suites **296/296PASS** including all19compatibility cases, full unsuppressed audit **0advisories/687dependencies**. Cross-transport actual standalone3443+Next3463 same-code race and known-context logout **2/2PASS**, no browser inference. TypeScript and full zero-warning ESLint passed before those cases.
+
+F-03 early IPC baseline FAILED: initial failure-cleanup fixture hung waiting inherited Windows pipe close and hit90s; bounded failure-only cleanup then recovered fixed evidence: natural main exit0, config/manifest/publication=true, preparing/prepared/READY=false. NOT a live listener orphan; abort already prevented prepare/listen, but publication after owner loss violates selected ownership boundary. Strict natural exit/close/no-publication assertions unchanged. Selected existing abort checkpoints before framework construction/publication/CLI entry; no new authority/metadata/credentials. Independent current-source review b2f75e8c found no concrete P1/P2/boundary violation, but explicitly did NOT inspect baseline diff or run commands—NOT patch/runtime certification.
+
+That later combined Kernel run passed initial/natural-clock+cold-process/status/roles cases, then failed cleanup and subsequent setup with8unhandled PG disconnect/reset errors; the owned foundation service was subsequently confirmed stopped. **Entire run FAILED**, not8pass. A helper optional IPC typing error was fixed before execution. Owned-only service restarted; next unfiltered35-case Node candidate actually finished **34PASS/1FAIL,0skip**. All8kernel cases (including natural DB-clock catch-up and genuine cold-process gate),7Next,2cross-transport,2upgrade/rollback-limit,5native-audit,2fresh-recheck and8synthetic faults passed. F-03 publication/preparing/READY were now all false with natural exit0, but Windows inherited stderr still prevented the new fixture's close event. This is a failed candidate, not35pass. Installed esbuild0.28.2 source main.js2272–2308 confirms its unreferenced helper inherits stderr. Startup fixture now leaves stderr unpiped and explicitly makes NO stderr/log-leakage claim; fully drained stdout/no-publication, genuine IPC loss, natural exit AND close, no forced cleanup, same bounds and real same-port CA restart assertions remain. Unpiping stderr alone still FAILED and is NOT represented as a fix. A credential-free standalone Node24 `-e` probe (no SDK/framework/database) then reproduced natural exit0 with stdout fully ended/closed, IPC disconnected, yet ChildProcess.close never emitted (_closesNeeded3/_closesGot2). This WITHDRAWS loader-stderr as the sufficient cause. The fixture now requires actual natural exit0 + fully drained stdout close + IPC release within the SAME45s, then the same exclusive-port/genuine TLS restart/no-publication checks; composite Node bookkeeping is diagnostic only. Forced cleanup remains failure. This changes a broken process-close oracle, not any authentication/lifecycle invariant, and makes no stderr log-leakage claim. Focused execution then **1/1PASS,0fail/error/skip**,5836ms case/18.84s suite: actual natural exit, fully drained stdout/IPC release, no publication/listen, exclusive free port and genuine new CA/hostname-verified anonymous Next GET plus diagnostics/normal close. Full types and full zero-warning lint passed again. Together with the preceding34 passing cases this covers all35 Node cases across serial runs, NOT a falsely claimed single35/35 local run; independent CI must run all35 unfiltered. No security clocks/budgets/limits/retries/skips changed.
+
+## 4. Remaining acceptance gates
+
+- Real Next HTTPS composition: negative outgoing counters, mixed same-account distinct sessions/native+Flight/Route/RSC, compound real credential-event retirement/worker BLOCKED, isolated SYNTHETIC offline critical-ledger pending/blocked with otherwise-live session, failure-recorder outage/restart, actual Route native-denial audits.
+- Real Linux full Chromium/NSS: fresh browser recovery-only/stale-version/direct held Action, blocked ledger, delayed unknown primary/logout limit, known-MFA cancellation ordering. Synthetic recovery/ledger fixtures are not activation ceremonies or native source commits.
+- Accepted-main seeded001–007 no-op deploy with exact source/ledger/state/ACL preservation; OFFLINE replay-history rollback simulation demonstrates history assumption, NOT physical/full snapshot restoration or safe recovery.
+- Post-native final-session DB-fault/deletion phase regressions and narrowly authorized audit correction, followed by repeated source review.
+- Remaining crash/startup/clock/key/cert/restore/outage/backlog assumptions and execution gaps must be explicitly reported. No automatic-safe-restore/key-rotation/Owner-login availability certificate.
+- ALL nine existing jobs/assertions/pins and new independent integrated job, final exact-HEAD actual successful checks/full unsuppressed audit, ordinary dev+production default-off and catalog/storefront regressions. A workflow definition is not a passed run.
+
+## 5. Recommendation and stop boundary
+
+**NO B.2e acceptance recommendation yet: validation and exact-final-HEAD CI pending.** Technical B.3 PLANNING recommendation will be separately stated only after evidence review; it never authorizes implementation/accounts/operational authentication. External custody/clock/restore/quarantine/audit/privacy/operators/identity/recovery procedures remain owner decisions and NOT YET OPERATIONALLY APPROVED. Keep eventual B.2e PR Draft/unmerged; STOP after B.2e.

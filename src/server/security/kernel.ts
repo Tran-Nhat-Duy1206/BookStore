@@ -39,10 +39,17 @@ function deny(reason: DenialReason): Denied {
   };
 }
 
+/** Malformed SQL output is a transaction fault, NOT a nonmutating denial.
+ * In particular, never normalize an unknown/extended false envelope into one
+ * that execute could commit after a procedure has already attempted DML.
+ */
 function decisionFrom(value: unknown): MinimalPermissionDecision {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return deny("unavailable");
+    throw new Error("Unavailable");
   }
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null)
+    throw new Error("Unavailable");
   const result = value as Record<string, unknown>;
   if (result.allowed === true) {
     if (
@@ -51,23 +58,36 @@ function decisionFrom(value: unknown): MinimalPermissionDecision {
       !Number.isSafeInteger(result.authorizationVersion) ||
       result.authorizationVersion < 0
     )
-      return deny("unavailable");
+      throw new Error("Unavailable");
     return {
       allowed: true,
       reason: "allowed",
       authorizationVersion: result.authorizationVersion,
     };
   }
-  if (result.allowed !== false) return deny("unavailable");
+  const keys = Reflect.ownKeys(result);
+  if (
+    keys.length !== 2 ||
+    !keys.includes("allowed") ||
+    !keys.includes("reason") ||
+    !["allowed", "reason"].every((key) => {
+      const descriptor = Object.getOwnPropertyDescriptor(result, key);
+      return descriptor !== undefined && "value" in descriptor;
+    }) ||
+    result.allowed !== false
+  )
+    throw new Error("Unavailable");
   switch (result.reason) {
     case "unauthenticated":
       return deny("unauthenticated");
+    case "forbidden":
+      return deny("forbidden");
     case "stale":
       return deny("stale");
     case "unavailable":
       return deny("unavailable");
     default:
-      return deny("forbidden");
+      throw new Error("Unavailable");
   }
 }
 
@@ -144,7 +164,7 @@ export function createSecurityKernel(
     }
   }
 
-  /** Separate bounded audit query after authorization rollback/release. Only the
+  /** Separate bounded audit query after authorization transaction/release. Only the
    * whitelist envelope reaches either sink; never input identities/claims/errors.
    * DB outage/saturation always returns 503, even if opt-in local evidence synced.
    */
@@ -192,6 +212,10 @@ export function createSecurityKernel(
     return deny("unavailable");
   }
 
+  // CLOSED set: only the three callbacks below. Canonical005 set_status,
+  // replace_roles and revoke_admission return false BEFORE business DML; after
+  // DML they return success or RAISE. Local argument denials also precede DML.
+  // A future callback returning false after DML MUST NOT inherit this contract.
   type Mutation = (
     client: PoolClient,
     session: Session,
@@ -208,6 +232,7 @@ export function createSecurityKernel(
     let transaction = false;
     let mutationAttempted = false;
     let commitAttempted = false;
+    let denialCommitConfirmed = false;
     let rollbackSucceeded = false;
     let discard = false;
     try {
@@ -236,11 +261,16 @@ export function createSecurityKernel(
               mutationAttempted = true;
             });
           }
-          if (result.allowed) {
-            commitAttempted = true;
-            await client.query("COMMIT");
-            transaction = false;
-          }
+          // Every returned false here is either an exact recognized SQL denial
+          // from the closed nonmutating paths above, or a local pre-DML argument
+          // denial. Malformed output/SQL exceptions throw and MUST roll back.
+          // Commit denial-only clock updates in THIS transaction: rolling them
+          // back could erase a frozen fence before a later probe sees it again.
+          const denialOnly = !result.allowed;
+          commitAttempted = true;
+          await client.query("COMMIT");
+          transaction = false;
+          denialCommitConfirmed = denialOnly;
         }
       }
     } catch {
@@ -262,8 +292,11 @@ export function createSecurityKernel(
     if (result.allowed) return result;
     // A failed/ambiguous COMMIT is never described as rolled back, even if a
     // subsequent ROLLBACK query succeeds on a connection of uncertain state.
-    const outcome: DenialOutcome =
-      mutationAttempted && rollbackSucceeded && !commitAttempted
+    const outcome: DenialOutcome = denialCommitConfirmed
+      ? result.reason === "unavailable"
+        ? "unavailable"
+        : "denied"
+      : mutationAttempted && rollbackSucceeded && !commitAttempted
         ? "rolled_back"
         : result.reason === "unavailable" || commitAttempted
           ? "unavailable"

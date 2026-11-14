@@ -898,6 +898,13 @@ export async function createDormantAdmissionControls(
     controlOperation(false, "unavailable", "dormant-denied");
   const denied = (reason: string) =>
     controlOperation(false, reason, "dormant-denied");
+  const nativeDenied = async (reason: "forbidden" | "unavailable") => {
+    if (closed) return unavailable();
+    // Native/authority statements have settled and released their locks. Audit
+    // via the existing bounded STAFF sink, never re-run SDK work or refund burn.
+    const decision = await authority.recordNativeDenial(reason);
+    return closed ? unavailable() : denied(decision.reason);
+  };
   type Context = {
     challengeHandle: string;
     userId: string;
@@ -950,7 +957,7 @@ export async function createDormantAdmissionControls(
       native.observation.purpose === "enrollment-investigation" ||
       native.observation.userId !== ctx.userId
     )
-      return denied(
+      return nativeDenied(
         native.response.status >= 500 ? "unavailable" : "forbidden",
       );
     if (performance.now() - begun > 30000) return denied("expired");
@@ -962,7 +969,12 @@ export async function createDormantAdmissionControls(
       actual.userId !== ctx.userId ||
       actual.sessionId !== native.observation.sessionId
     )
-      return denied("stale");
+      // Native work may already have committed. The fresh session lookup is a
+      // separate failure boundary: unavailable is not an ordinary stale login,
+      // and neither failure may skip terminal denial evidence or imply rollback.
+      return nativeDenied(
+        actual.state === "unavailable" ? "unavailable" : "forbidden",
+      );
     // NOT an assessment of WeakMap/metadata! This is the private result of our
     // immediately awaited native operation. SQL independently enforces its
     // reserved operation, original pin/version, final binding and hard deadline.
@@ -1022,7 +1034,7 @@ export async function createDormantAdmissionControls(
         return denied(prepared.reason);
       const native = await core.api.password(email, password);
       if (!native.response.ok || !native.primary)
-        return denied(
+        return nativeDenied(
           native.response.status >= 500 ? "unavailable" : "forbidden",
         );
       const state: unknown = await native.response.clone().json();

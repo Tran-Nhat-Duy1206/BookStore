@@ -525,6 +525,20 @@ export async function createAdmissionAuthority(config: {
     // Snapshot of both validated initial role catalogs; no quota reservation,
     // private state, identity or authorization claim is exposed by this flag.
     transportSupported,
+    // Denial-only bridge for the private facade AFTER a completed native failure.
+    // No caller-selected outcome/actor/SQL; native effects are never classified
+    // as rolled back. Existing SQL-outcome denials remain recorded by call().
+    async recordNativeDenial(
+      reason: unknown,
+    ): Promise<ReadonlyControlDecision> {
+      if (closed || (reason !== "forbidden" && reason !== "unavailable"))
+        return deny("unavailable");
+      const recorded = await recordDenial(
+        reason,
+        reason === "unavailable" ? "unavailable" : "denied",
+      );
+      return deny(recorded && !closed ? reason : "unavailable");
+    },
     clockProbe: () =>
       call(
         "verifier",

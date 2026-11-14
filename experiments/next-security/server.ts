@@ -164,6 +164,7 @@ export async function startIsolatedNextSecurity(value: NextSecurityConfig) {
   if (Object.getOwnPropertyDescriptor(globalThis, HOST_KEY))
     throw new Error("Isolated host already initialized.");
   const manifest = await buildManifest();
+  ownedLifetime.signal.throwIfAborted();
   process.stdout.write("BookStore Next startup manifest validated.\n");
   const requests = new AsyncLocalStorage<TrustedWire>();
   let published: NextSecurityService | null = null;
@@ -179,6 +180,9 @@ export async function startIsolatedNextSecurity(value: NextSecurityConfig) {
       return published;
     },
     publish(service: NextSecurityService) {
+      // Construction can finish after supervisor loss. Never publish that
+      // service; the instrumentation's existing catch awaits its pool cleanup.
+      ownedLifetime.signal.throwIfAborted();
       if (
         published ||
         !service ||
@@ -556,6 +560,9 @@ if (
   process.once("SIGINT", () => {
     void close();
   });
+  // IPC may have closed while ESM dependencies were loading, before handlers
+  // existed. Fold that already-lost owner into the same existing abort path.
+  if (typeof process.send === "function" && !process.connected) void close();
   void (async () => {
     const raw: unknown = JSON.parse(
       process.env.BOOKSTORE_NEXT_SECURITY_CONFIG ?? "null",
