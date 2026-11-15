@@ -290,14 +290,35 @@ describe("isolated production-built Next actual HTTPS authority (Node replay, no
     async () => {
       const entry = await login();
       const before = await immutableOrigins(entry.principal.userId);
-      const candidates = [
-        await fx.code(entry.principal, -1),
-        await fx.code(entry.principal, 1),
-      ];
-      const freshCode = candidates.find((code) => code !== entry.code);
-      if (!freshCode)
+      const generationWindow = Math.floor(Date.now() / 30_000);
+      // Use the maintained +1 slot: a forward boundary can expire a -1 slot.
+      // A rare collision fails, never regenerates/retries or widens SDK tolerance.
+      const freshCode = await fx.code(entry.principal, 1);
+      if (!freshCode || freshCode === entry.code)
         throw new Error("Synthetic fresh maintained code unavailable.");
       const result = await entry.client.post("stepUp", { code: freshCode });
+      if (!(
+        result.status === 200 &&
+        result.state === "verified-test-session" &&
+        result.disabled
+      ))
+        console.info(
+          JSON.stringify({
+            diagnostic: "next-step-up-positive-unavailable",
+            status: [200, 400, 401, 403, 405, 409, 415, 429, 500, 503].includes(
+              result.status,
+            )
+              ? result.status
+              : 0,
+            state:
+              result.state === "verified-test-session" ||
+              result.state === "unavailable"
+                ? result.state
+                : "other",
+            disabled: result.disabled === true,
+            windowAdvanced: Math.floor(Date.now() / 30_000) > generationWindow,
+          }),
+        );
       expect(
         result.status === 200 &&
           result.state === "verified-test-session" &&
