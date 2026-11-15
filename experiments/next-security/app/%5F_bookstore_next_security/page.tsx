@@ -55,65 +55,78 @@ export default async function SecurityProbePage() {
   const model = await guardedPageModel(cookieStore);
   if (model.kind === "denied") {
     return (
-      <main data-security-state="denied" data-application-admission="disabled">
-        Isolated security probe denied.
-      </main>
+      <>
+        <main
+          data-security-state="denied"
+          data-application-admission="disabled"
+        >
+          Isolated security probe denied.
+        </main>
+        <EnhancedActions nonces={{}} />
+      </>
     );
   }
   if (model.kind !== "result") {
     return (
-      <main
-        data-security-state="unavailable"
-        data-application-admission="disabled"
-      >
-        Isolated security probe unavailable.
-      </main>
+      <>
+        <main
+          data-security-state="unavailable"
+          data-application-admission="disabled"
+        >
+          Isolated security probe unavailable.
+        </main>
+        <EnhancedActions nonces={{}} />
+      </>
     );
   }
   const { state, admitted, nonces } = model;
+  // Same root Fragment and client sibling position in EVERY model: Action cookie
+  // clearing may correctly deny the rerender without unmounting local feedback.
   return (
-    <main data-security-state={state} data-application-admission="disabled">
-      <h1>Isolated synthetic security probe</h1>
-      <p>
-        Application admission is disabled. This is not a login or administration
-        interface.
-      </p>
-      <p
-        data-live-guard={
-          admitted ? "admitted-test-session" : "denied-test-session"
-        }
-      >
-        {state}
-      </p>
-      {nonces.probe ? (
-        <form
-          action={probeAction}
-          encType="multipart/form-data"
-          data-native="probe"
+    <>
+      <main data-security-state={state} data-application-admission="disabled">
+        <h1>Isolated synthetic security probe</h1>
+        <p>
+          Application admission is disabled. This is not a login or
+          administration interface.
+        </p>
+        <p
+          data-live-guard={
+            admitted ? "admitted-test-session" : "denied-test-session"
+          }
         >
-          <input type="hidden" name="csrf" value={nonces.probe} />
-          <button type="submit">Native read-only probe</button>
-        </form>
-      ) : null}
-      {nonces.revokeSelf ? (
+          {state}
+        </p>
+        {nonces.probe ? (
+          <form
+            action={probeAction}
+            encType="multipart/form-data"
+            data-native="probe"
+          >
+            <input type="hidden" name="csrf" value={nonces.probe} />
+            <button type="submit">Native read-only probe</button>
+          </form>
+        ) : null}
+        {nonces.revokeSelf ? (
+          <form
+            action={revokeSelfAction}
+            encType="multipart/form-data"
+            data-native="revoke-self"
+          >
+            <input type="hidden" name="csrf" value={nonces.revokeSelf} />
+            <button type="submit">Native revoke self</button>
+          </form>
+        ) : null}
         <form
-          action={revokeSelfAction}
+          action={signOutAction}
           encType="multipart/form-data"
-          data-native="revoke-self"
+          data-native="sign-out"
         >
-          <input type="hidden" name="csrf" value={nonces.revokeSelf} />
-          <button type="submit">Native revoke self</button>
+          <input type="hidden" name="csrf" value={nonces.signOut} />
+          <button type="submit">Native sign out</button>
         </form>
-      ) : null}
-      <form
-        action={signOutAction}
-        encType="multipart/form-data"
-        data-native="sign-out"
-      >
-        <input type="hidden" name="csrf" value={nonces.signOut} />
-        <button type="submit">Native sign out</button>
-      </form>
+      </main>
       <EnhancedActions nonces={nonces} />
-    </main>
+    </>
   );
 }

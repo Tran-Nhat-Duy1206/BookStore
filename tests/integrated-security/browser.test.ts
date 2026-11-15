@@ -1046,8 +1046,10 @@ describe("mandatory Linux Chromium B2e integrated denial/continuity evidence", (
           },
         );
         const verifierWitness = await lockWitness(
-          `SELECT EXISTS(SELECT 1 FROM pg_stat_activity a WHERE a.datname=current_database()
-        AND a.usename=$1 AND a.wait_event_type='Lock' AND $2::integer=ANY(pg_blocking_pids(a.pid))) AS observed`,
+          `SELECT EXISTS(SELECT 1 FROM pg_stat_activity a JOIN pg_locks l ON l.pid=a.pid
+        WHERE a.datname=current_database() AND a.usename=$1
+          AND l.locktype='advisory' AND NOT l.granted
+          AND $2::integer=ANY(pg_blocking_pids(a.pid))) AS observed`,
           [new URL(fx.owned.verifierUrl).username, pid],
         );
         if (!verifierWitness.observed)
@@ -1073,9 +1075,12 @@ describe("mandatory Linux Chromium B2e integrated denial/continuity evidence", (
         // itself waiting on our exact advisory key. This observes one real order;
         // it does NOT force or claim both HTTP response delivery permutations.
         const staffWitness = await lockWitness(
-          `SELECT EXISTS(SELECT 1 FROM pg_stat_activity s JOIN pg_stat_activity v
-        ON v.pid=ANY(pg_blocking_pids(s.pid)) WHERE s.datname=current_database() AND v.datname=current_database()
-          AND s.usename=$1 AND v.usename=$2 AND s.wait_event_type='Lock'
+          `SELECT EXISTS(SELECT 1 FROM pg_stat_activity s JOIN pg_locks sl ON sl.pid=s.pid
+        JOIN pg_stat_activity v ON v.pid=ANY(pg_blocking_pids(s.pid))
+        JOIN pg_locks vl ON vl.pid=v.pid
+        WHERE s.datname=current_database() AND v.datname=current_database()
+          AND s.usename=$1 AND v.usename=$2 AND NOT sl.granted
+          AND vl.locktype='advisory' AND NOT vl.granted
           AND $3::integer=ANY(pg_blocking_pids(v.pid))) AS observed`,
           [
             new URL(fx.owned.staffUrl).username,
