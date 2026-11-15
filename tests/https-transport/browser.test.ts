@@ -539,6 +539,18 @@ describe("mandatory real Linux NSS Chromium HTTPS acceptance", () => {
       const responseStatuses = new Map<string, number>();
       const target = `${origin}${TRANSPORT_PATHS.signOut}`;
       let preflightDenied = false;
+      let resolvePreflightWitness: () => void = () => {};
+      // Prearm correlation BEFORE the single fetch. No rejecting timer exists
+      // until this witness is actually awaited, so an earlier assertion failure
+      // cannot leave an unhandled rejection. Preserve BOTH CDP event orders.
+      const preflightWitness = new Promise<void>((resolve) => {
+        resolvePreflightWitness = resolve;
+      });
+      let witnessTimer: ReturnType<typeof setTimeout> | undefined;
+      const recordPreflightDenied = () => {
+        preflightDenied = true;
+        resolvePreflightWitness();
+      };
       await network.send("Network.enable");
       network.on("Network.requestWillBeSent", (event) => {
         if (
@@ -547,14 +559,14 @@ describe("mandatory real Linux NSS Chromium HTTPS acceptance", () => {
         ) {
           preflightIds.add(event.requestId);
           if (responseStatuses.get(event.requestId) === 405)
-            preflightDenied = true;
+            recordPreflightDenied();
         }
       });
       network.on("Network.responseReceivedExtraInfo", (event) => {
         // Retain only request correlation and numeric status, never headers.
         responseStatuses.set(event.requestId, event.statusCode);
         if (preflightIds.has(event.requestId) && event.statusCode === 405)
-          preflightDenied = true;
+          recordPreflightDenied();
       });
       try {
         expect(
@@ -577,10 +589,37 @@ describe("mandatory real Linux NSS Chromium HTTPS acceptance", () => {
           }
         }, target);
         expect(denied).toBe(true);
+        // Fetch rejection and CDP ExtraInfo delivery are separate observations.
+        // Await exact OPTIONS + target + correlated request ID +405, never mere
+        // fetch failure, within the SAME existing10s browser observation bound.
+        await new Promise<void>((resolve, reject) => {
+          witnessTimer = setTimeout(() => {
+            const matchedResponse = [...preflightIds].some((id) =>
+              responseStatuses.has(id),
+            );
+            const status: "none" | "405" | "other" = [...preflightIds].some(
+              (id) => responseStatuses.get(id) === 405,
+            )
+              ? "405"
+              : matchedResponse
+                ? "other"
+                : "none";
+            // Fixed metadata only: no request IDs, URLs, headers or payloads.
+            console.info(
+              `Synthetic exact preflight witness timeout optionsSeen=${preflightIds.size > 0}, matchedResponseSeen=${matchedResponse}, requestCount=${preflightIds.size}, responseCount=${responseStatuses.size}, status=${status}.`,
+            );
+            reject(new Error("Synthetic exact OPTIONS405 witness timed out."));
+          }, 10000);
+          preflightWitness.then(() => {
+            if (witnessTimer) clearTimeout(witnessTimer);
+            resolve();
+          });
+        });
         expect(preflightDenied).toBe(true);
         expect((await ingressUsed()) === before).toBe(true);
         expect((await post("session")).status).toBe(200);
       } finally {
+        if (witnessTimer) clearTimeout(witnessTimer);
         await network.detach();
         await foreign.close();
       }
