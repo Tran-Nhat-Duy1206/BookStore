@@ -319,7 +319,27 @@ describe("canonical unmounted provider and trusted resolver", () => {
   it("rejects a tampered cookie and never trusts identity/role cookie claims", async () => {
     const f = await fixture({ mfa: false });
     const { jar } = await begin(f);
-    const forged = jar.header.replace(/(session_token=)[^;]/, "$1X");
+    const original = jar.header;
+    expect((await subject.resolveSession(original)).state).toBe(
+      "provider-authenticated",
+    );
+    // Deterministic PURE fixture demonstration, not an SDK/credential lookup:
+    // the old literal-X operator could leave an X-leading value unchanged.
+    const synthetic = "session_token=Xsynthetic-not-a-credential";
+    expect(synthetic.replace(/(session_token=)[^;]/, "$1X") === synthetic).toBe(
+      true,
+    );
+    let tokenMatched = false;
+    const forged = original.replace(
+      /(session_token=)([^;])/,
+      (_match: string, prefix: string, first: string) => {
+        tokenMatched = true;
+        return prefix + (first === "X" ? "Y" : "X");
+      },
+    );
+    // Assert only booleans: never expose genuine/forged credential bytes. One
+    // actual corrupted lookup, no retry, token regeneration or SDK crypto copy.
+    expect(tokenMatched && forged !== original).toBe(true);
     expect((await subject.resolveSession(forged)).state).toBe(
       "unauthenticated",
     );
