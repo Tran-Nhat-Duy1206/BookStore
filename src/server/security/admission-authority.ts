@@ -4,7 +4,15 @@ import { randomUUID } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { Pool, type PoolClient } from "pg";
 import { assertFoundationUrl } from "./database-config";
-import { validateControlClockSample } from "./control-clock";
+import {
+  CONTROL_MAX_SAMPLE_MS,
+  validateControlClockSample,
+} from "./control-clock";
+import {
+  createClockDiagnosticGroup,
+  logClockProbeDiagnostic,
+  type ClockProbeDiagnostic,
+} from "./clock-probe-diagnostics";
 
 // Dormant internal positive issuer. SQL credentials authenticate this trusted
 // authority; this module does NOT independently prove that an SDK call occurred.
@@ -184,6 +192,18 @@ function project(value: unknown): ReadonlyControlDecision {
 
 type Role = "verifier" | "staff";
 type Outcome = "denied" | "rolled_back" | "unavailable";
+type DiagnosticPhase = "initialization" | "operation" | "catch";
+type CheckedDiagnostics = {
+  phase: DiagnosticPhase;
+  acquireAwaitMs: number;
+  metadataAwaitMs: number;
+  relativeInitMs: number;
+  poolTotalBefore: number;
+  poolIdleBefore: number;
+  poolWaitingBefore: number;
+};
+// Process-local overlap of diagnostic probe brackets, not database/session IDs.
+const diagnosticProbes = new Set<{ overlap: boolean }>();
 
 export async function createAdmissionAuthority(config: {
   verifierUrl: string;
@@ -218,6 +238,11 @@ export async function createAdmissionAuthority(config: {
   } catch {
     throw new Error("invalid dormant authority configuration");
   }
+  const diagnosticGroup = createClockDiagnosticGroup();
+  const diagnosticInit = diagnosticGroup ? performance.now() : 0;
+  // Buffer at most two initialization observations until BOTH measured role
+  // brackets settle; formatting/log I/O must not extend the sibling's sample.
+  const initialDiagnostics: ClockProbeDiagnostic[] = [];
   const pools = {
     verifier: new Pool({
       connectionString: verifierUrl,
@@ -363,13 +388,34 @@ export async function createAdmissionAuthority(config: {
   }
   async function checked<T>(
     role: Role,
-    work: (client: PoolClient, transportSupported: boolean) => Promise<T>,
+    work: (
+      client: PoolClient,
+      transportSupported: boolean,
+      diagnostics?: CheckedDiagnostics,
+    ) => Promise<T>,
+    phase: DiagnosticPhase = "operation",
   ): Promise<T> {
     if (closed) throw new Error("metadataUnavailable");
+    const acquisitionStart = diagnosticGroup ? performance.now() : 0;
+    const diagnostics: CheckedDiagnostics | undefined = diagnosticGroup
+      ? {
+          phase,
+          acquireAwaitMs: 0,
+          metadataAwaitMs: 0,
+          relativeInitMs: acquisitionStart - diagnosticInit,
+          poolTotalBefore: pools[role].totalCount,
+          poolIdleBefore: pools[role].idleCount,
+          poolWaitingBefore: pools[role].waitingCount,
+        }
+      : undefined;
     const client = await pools[role].connect();
+    const acquired = diagnosticGroup ? performance.now() : 0;
+    if (diagnostics) diagnostics.acquireAwaitMs = acquired - acquisitionStart;
     try {
       const transportSupported = await metadata(client, role);
-      return await work(client, transportSupported);
+      if (diagnostics)
+        diagnostics.metadataAwaitMs = performance.now() - acquired;
+      return await work(client, transportSupported, diagnostics);
     } finally {
       client.release();
     }
@@ -377,42 +423,93 @@ export async function createAdmissionAuthority(config: {
   async function probe(
     client: PoolClient,
     role: Role,
+    diagnostics?: CheckedDiagnostics,
   ): Promise<ReadonlyControlDecision> {
-    const before = Date.now(),
-      start = performance.now();
-    // AUTOCOMMIT: a SQL false/latch result must commit before JS rejects it.
-    const response = await client.query(
-      role === "verifier"
-        ? "SELECT control_private.clock_probe() AS decision"
-        : "SELECT staff.control_clock_probe() AS decision",
-    );
-    const elapsed = performance.now() - start,
-      after = Date.now();
-    const raw = response.rows[0]?.decision;
-    const decision = project(raw);
-    if (!decision.allowed || !decision.databaseTime)
-      return deny(decision.allowed ? "unavailable" : decision.reason);
-    // ISO normalization truncates PG microseconds. Conservatively include that
-    // lost precision in the sample envelope rather than use a midpoint/rounding
-    // to admit a fractional out-of-bound offset at the inclusive skew boundary.
-    const fraction =
-      typeof raw?.databaseTime === "string"
-        ? /\.(\d{4,6})(?:Z|[+-](?:0\d|1\d|2[0-3]):[0-5]\d)$/.exec(
-            raw.databaseTime,
-          )?.[1]
-        : undefined;
-    const uncertainty = fraction && /[1-9]/.test(fraction.slice(3)) ? 1 : 0;
-    const quality = validateControlClockSample({
-      nodeBeforeMs: before - uncertainty,
-      nodeAfterMs: after + uncertainty,
-      monotonicElapsedMs: elapsed,
-      databaseTime: decision.databaseTime,
-    });
-    if (!quality.valid)
-      console.info(
-        `BookStore dormant clock sample denied role=${role}, reason=${quality.reason}.`,
+    const diagnosticStart = diagnosticGroup ? performance.now() : 0;
+    const eventLoopStart = diagnosticGroup
+      ? performance.eventLoopUtilization()
+      : undefined;
+    const overlap = diagnosticGroup
+      ? { overlap: diagnosticProbes.size > 0 }
+      : undefined;
+    if (overlap) {
+      for (const active of diagnosticProbes) active.overlap = true;
+      diagnosticProbes.add(overlap);
+    }
+    try {
+      const before = Date.now(),
+        start = performance.now();
+      // AUTOCOMMIT: a SQL false/latch result must commit before JS rejects it.
+      const response = await client.query(
+        role === "verifier"
+          ? "SELECT control_private.clock_probe() AS decision"
+          : "SELECT staff.control_clock_probe() AS decision",
       );
-    return quality.valid ? decision : deny("unavailable");
+      const elapsed = performance.now() - start,
+        after = Date.now();
+      const eventLoopDelta = eventLoopStart
+        ? performance.eventLoopUtilization(eventLoopStart)
+        : undefined;
+      if (overlap) diagnosticProbes.delete(overlap);
+      const raw = response.rows[0]?.decision;
+      const decision = project(raw);
+      if (!decision.allowed || !decision.databaseTime)
+        return deny(decision.allowed ? "unavailable" : decision.reason);
+      // ISO normalization truncates PG microseconds. Conservatively include that
+      // lost precision in the sample envelope rather than use a midpoint/rounding
+      // to admit a fractional out-of-bound offset at the inclusive skew boundary.
+      const fraction =
+        typeof raw?.databaseTime === "string"
+          ? /\.(\d{4,6})(?:Z|[+-](?:0\d|1\d|2[0-3]):[0-5]\d)$/.exec(
+              raw.databaseTime,
+            )?.[1]
+          : undefined;
+      const uncertainty = fraction && /[1-9]/.test(fraction.slice(3)) ? 1 : 0;
+      const quality = validateControlClockSample({
+        nodeBeforeMs: before - uncertainty,
+        nodeAfterMs: after + uncertainty,
+        monotonicElapsedMs: elapsed,
+        databaseTime: decision.databaseTime,
+      });
+      if (!quality.valid)
+        console.info(
+          `BookStore dormant clock sample denied role=${role}, reason=${quality.reason}.`,
+        );
+      if (diagnostics && eventLoopDelta && overlap) {
+        const observation: ClockProbeDiagnostic = {
+          group: diagnosticGroup,
+          role,
+          phase: diagnostics.phase,
+          reason: quality.reason,
+          rawWallSpanMs: after - before,
+          adjustedWallSpanMs: after + uncertainty - (before - uncertainty),
+          precisionPadMs: uncertainty,
+          monoElapsedMs: elapsed,
+          queryAwaitMs: elapsed,
+          acquireAwaitMs: diagnostics.acquireAwaitMs,
+          metadataAwaitMs: diagnostics.metadataAwaitMs,
+          relativeInitMs: diagnostics.relativeInitMs,
+          relativeProbeMs: diagnosticStart - diagnosticInit,
+          eventLoopActiveMs: eventLoopDelta.active,
+          eventLoopIdleMs: eventLoopDelta.idle,
+          wallExceeded:
+            after + uncertainty - (before - uncertainty) >
+            CONTROL_MAX_SAMPLE_MS,
+          monoExceeded: elapsed > CONTROL_MAX_SAMPLE_MS,
+          overlap: overlap.overlap,
+          poolTotalBefore: diagnostics.poolTotalBefore,
+          poolIdleBefore: diagnostics.poolIdleBefore,
+          poolWaitingBefore: diagnostics.poolWaitingBefore,
+        };
+        if (diagnostics.phase === "initialization") {
+          if (initialDiagnostics.length < 2)
+            initialDiagnostics.push(observation);
+        } else logClockProbeDiagnostic(observation);
+      }
+      return quality.valid ? decision : deny("unavailable");
+    } finally {
+      if (overlap) diagnosticProbes.delete(overlap);
+    }
   }
   async function recordDenial(
     reason: ControlDecisionReason,
@@ -464,17 +561,24 @@ export async function createAdmissionAuthority(config: {
     }
     let decision: ReadonlyControlDecision;
     try {
-      decision = await checked(role, async (client) => {
-        const clock = await probe(client, role);
-        if (!clock.allowed || clockOnly) return clock;
-        const response = await client.query(sql, args);
-        return project(response.rows[0]?.decision);
-      });
+      decision = await checked(
+        role,
+        async (client, _supported, diagnostics) => {
+          const clock = await probe(client, role, diagnostics);
+          if (!clock.allowed || clockOnly) return clock;
+          const response = await client.query(sql, args);
+          return project(response.rows[0]?.decision);
+        },
+      );
     } catch (error) {
       // All held statements/connections have settled and been released first.
       const outcome = failureOutcome(error);
       try {
-        await checked(role, (client) => probe(client, role));
+        await checked(
+          role,
+          (client, _supported, diagnostics) => probe(client, role, diagnostics),
+          "catch",
+        );
       } catch {
         /* best-effort durable latch */
       }
@@ -507,16 +611,24 @@ export async function createAdmissionAuthority(config: {
   let transportSupported = false;
   try {
     const [verifierTransport, staffTransport] = await Promise.all([
-      checked("verifier", async (client, supported) => {
-        if (!(await probe(client, "verifier")).allowed)
-          throw new Error("metadataUnavailable");
-        return supported;
-      }),
-      checked("staff", async (client, supported) => {
-        if (!(await probe(client, "staff")).allowed)
-          throw new Error("metadataUnavailable");
-        return supported;
-      }),
+      checked(
+        "verifier",
+        async (client, supported, diagnostics) => {
+          if (!(await probe(client, "verifier", diagnostics)).allowed)
+            throw new Error("metadataUnavailable");
+          return supported;
+        },
+        "initialization",
+      ),
+      checked(
+        "staff",
+        async (client, supported, diagnostics) => {
+          if (!(await probe(client, "staff", diagnostics)).allowed)
+            throw new Error("metadataUnavailable");
+          return supported;
+        },
+        "initialization",
+      ),
     ]);
     if (verifierTransport !== staffTransport)
       throw new Error("metadataUnavailable");
@@ -524,6 +636,10 @@ export async function createAdmissionAuthority(config: {
   } catch {
     await close().catch(() => {});
     throw new Error("metadataUnavailable");
+  } finally {
+    for (const observation of initialDiagnostics)
+      logClockProbeDiagnostic(observation);
+    initialDiagnostics.length = 0;
   }
   return Object.freeze({
     // Snapshot of both validated initial role catalogs; no quota reservation,

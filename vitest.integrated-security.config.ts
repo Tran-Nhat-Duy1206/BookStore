@@ -23,6 +23,7 @@ export default defineConfig({
       "tests/integrated-security/continuity-upgrade.test.ts",
       "tests/integrated-security/cross-transport-replay.test.ts",
       "tests/integrated-security/startup-ownership.test.ts",
+      "tests/integrated-security/clock-quality-investigation.test.ts",
     ],
     fileParallelism: false,
     maxWorkers: 1,
