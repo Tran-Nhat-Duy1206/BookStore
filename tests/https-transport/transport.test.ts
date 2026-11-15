@@ -31,6 +31,119 @@ const fx = new ControlFixtures();
 let certs: TransportCertificateFixture, transport: RestrictedHttpsTestTransport;
 const scenario = (name: string, run: () => Promise<void>) =>
   it(name, () => secretSafe(run));
+async function failedTotpStageDiagnostic(
+  userId: string,
+  response: {
+    status: number;
+    state: string | null;
+    minimal: boolean;
+    noStore: boolean;
+  },
+): Promise<void> {
+  const states = [
+    "mfa-required",
+    "verified-test-session",
+    "signed-out",
+    "denied",
+    "rate-limited",
+    "unavailable",
+  ];
+  const status = [400, 401, 403, 429, 500, 503].includes(response.status)
+    ? String(response.status)
+    : "other";
+  const state =
+    response.state !== null && states.includes(response.state)
+      ? response.state
+      : "other";
+  const prefix = `Synthetic standalone wire TOTP diagnostic status=${status}, state=${state}, minimal=${response.minimal === true}, noStore=${response.noStore === true}`;
+  try {
+    // One post-response read-only snapshot in THIS run-owned Migrate fixture.
+    // User/SIDs/MACs remain private bound predicates/CTEs; no clock probe, SDK
+    // call, source metadata fallback, retry or inferred failure classification.
+    const result = await fx.migration.query<Record<string, unknown>>(
+      `WITH scoped_attempts AS (
+        SELECT state,code_mac,final_session_id,prior_session_id
+        FROM control_private.attempts WHERE user_id=$1
+      ), relevant_sessions AS (
+        SELECT final_session_id AS sid FROM scoped_attempts WHERE final_session_id IS NOT NULL
+        UNION SELECT prior_session_id FROM scoped_attempts WHERE prior_session_id IS NOT NULL
+        UNION SELECT session_id FROM staff.admissions WHERE user_id=$1
+        UNION SELECT session_id FROM control_private.session_controls WHERE user_id=$1
+      ), relevant_events AS (
+        SELECT e.state FROM audit.provider_events e WHERE e.user_id=$1 AND
+          (e.invalidates_user OR (e.kind<>'session.created' AND
+            EXISTS(SELECT 1 FROM relevant_sessions s WHERE s.sid=e.session_id)))
+      ) SELECT
+        EXISTS(SELECT 1 FROM control_private.clock_state WHERE singleton) AS clock_present,
+        coalesce((SELECT frozen FROM control_private.clock_state WHERE singleton),false) AS clock_frozen,
+        (SELECT count(*) FROM scoped_attempts WHERE state='prepared')::integer AS prepared,
+        (SELECT count(*) FROM scoped_attempts WHERE state='bound')::integer AS bound,
+        (SELECT count(*) FROM scoped_attempts WHERE state='inflight')::integer AS inflight,
+        (SELECT count(*) FROM scoped_attempts WHERE state='ready')::integer AS ready,
+        (SELECT count(*) FROM scoped_attempts WHERE state='consumed')::integer AS consumed,
+        (SELECT count(*) FROM scoped_attempts WHERE state='denied')::integer AS denied,
+        (SELECT count(*) FROM scoped_attempts WHERE state='revoked')::integer AS revoked,
+        (SELECT count(*) FROM scoped_attempts WHERE state='expired')::integer AS expired,
+        (SELECT count(*) FROM scoped_attempts WHERE state='unknown')::integer AS unknown,
+        (SELECT count(*) FROM control_private.replay_burns b WHERE
+          EXISTS(SELECT 1 FROM scoped_attempts a WHERE a.code_mac=b.code_mac))::integer AS burns,
+        (SELECT count(*) FROM audit.events WHERE subject_id=$1 AND action='control.reserved')::integer AS reserved,
+        (SELECT count(*) FROM audit.events WHERE subject_id=$1 AND action='control.evidence')::integer AS evidence,
+        (SELECT count(*) FROM audit.events WHERE subject_id=$1 AND action='control.login')::integer AS login,
+        (SELECT count(*) FROM staff.admissions WHERE user_id=$1)::integer AS admissions,
+        (SELECT count(*) FROM identity."Session" WHERE "userId"=$1)::integer AS provider_sessions,
+        (SELECT coalesce(sum("failedVerificationCount"),0) FROM identity."TwoFactor" WHERE "userId"=$1)::integer AS factor_failures,
+        (SELECT count(*) FROM control_private.approved_generations WHERE user_id=$1 AND retired)::integer AS retired_generations,
+        (SELECT count(*) FROM relevant_events WHERE state='pending')::integer AS critical_pending,
+        (SELECT count(*) FROM relevant_events WHERE state='blocked')::integer AS critical_blocked`,
+      [userId],
+    );
+    const row = result.rows[0];
+    const counts = [
+      "prepared",
+      "bound",
+      "inflight",
+      "ready",
+      "consumed",
+      "denied",
+      "revoked",
+      "expired",
+      "unknown",
+      "burns",
+      "reserved",
+      "evidence",
+      "login",
+      "admissions",
+      "provider_sessions",
+      "factor_failures",
+      "retired_generations",
+      "critical_pending",
+      "critical_blocked",
+    ];
+    if (
+      result.rows.length !== 1 ||
+      !row ||
+      typeof row.clock_present !== "boolean" ||
+      typeof row.clock_frozen !== "boolean" ||
+      !counts.every((name) => {
+        const count = row[name];
+        return (
+          typeof count === "number" && Number.isSafeInteger(count) && count >= 0
+        );
+      })
+    ) {
+      console.info(`${prefix}, available=false.`);
+      return;
+    }
+    console.info(
+      `${prefix}, available=true, clockPresent=${row.clock_present}, clockFrozen=${row.clock_frozen}, ${counts.map((name) => `${name}=${row[name]}`).join(", ")}.`,
+    );
+  } catch {
+    // Evidence-read failure must NEVER replace the original status assertion or
+    // print a DB error/stack, parameter, private row, time or configuration.
+    console.info(`${prefix}, available=false.`);
+  }
+}
 async function login(client = new WireClient(certs.ca)) {
   const principal = await fx.createPrincipal();
   const primary = await client.post("password", {
@@ -41,6 +154,13 @@ async function login(client = new WireClient(certs.ca)) {
   const old = client.jar.clone();
   const code = await fx.code(principal);
   const verified = await client.post("totp", { code });
+  if (verified.status !== 200)
+    await failedTotpStageDiagnostic(principal.userId, {
+      status: verified.status,
+      state: verified.state,
+      minimal: verified.applicationDisabled,
+      noStore: verified.noStore,
+    });
   expect(verified.status).toBe(200);
   const rows = await fx.migration.query<{ session_id: string }>(
     "SELECT session_id FROM staff.admissions WHERE user_id=$1 AND mode='verified'",

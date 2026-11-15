@@ -408,6 +408,10 @@ export async function createAdmissionAuthority(config: {
       monotonicElapsedMs: elapsed,
       databaseTime: decision.databaseTime,
     });
+    if (!quality.valid)
+      console.info(
+        `BookStore dormant clock sample denied role=${role}, reason=${quality.reason}.`,
+      );
     return quality.valid ? decision : deny("unavailable");
   }
   async function recordDenial(
