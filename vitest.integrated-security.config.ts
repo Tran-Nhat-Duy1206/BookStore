@@ -24,6 +24,8 @@ export default defineConfig({
       "tests/integrated-security/cross-transport-replay.test.ts",
       "tests/integrated-security/startup-ownership.test.ts",
       "tests/integrated-security/clock-quality-investigation.test.ts",
+      "tests/integrated-security/clock-latency-attribution.test.ts",
+      "tests/integrated-security/clock-startup-concurrency.test.ts",
     ],
     fileParallelism: false,
     maxWorkers: 1,
