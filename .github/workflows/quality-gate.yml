@@ -511,3 +511,81 @@ jobs:
             provider-proof-test-results/next-browser.xml
           if-no-files-found: warn
           retention-days: 7
+
+  integrated-security-acceptance:
+    name: Independent integrated security acceptance and continuity evidence
+    # Preserve every original gate; this extra workload starts only after them.
+    # Earlier failures still execute this job and remain workflow failures.
+    needs: [isolated-next-security]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      CI: "true"
+      NEXT_TELEMETRY_DISABLED: "1"
+      SECURITY_TEST_DATABASE_URL: postgresql://bookstore_security_bootstrap:${{ github.run_id }}-${{ github.run_attempt }}-disposable@127.0.0.1:55437/bookstore_security_ci
+    services:
+      postgres:
+        image: postgres:18.3-alpine
+        env:
+          POSTGRES_USER: bookstore_security_bootstrap
+          POSTGRES_PASSWORD: ${{ github.run_id }}-${{ github.run_attempt }}-disposable
+          POSTGRES_DB: bookstore_security_ci
+        ports:
+          - "127.0.0.1:55437:5432"
+        options: >-
+          --health-cmd "pg_isready -U bookstore_security_bootstrap -d bookstore_security_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Check out independent acceptance candidate
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Set up pnpm
+        uses: pnpm/action-setup@9bbca1e9dc2902adb87e8780fe5c98796985a62d # v6.1.1
+        with:
+          version: 11.7.0
+          run_install: false
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.19.0
+          cache: pnpm
+      - name: Install exact locked dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Bind accepted-main migration dependency and spike bytes
+        run: |
+          git merge-base --is-ancestor aefabf65f1b66d1ece5c7e5729e98a4c617c2669 HEAD
+          git diff --exit-code aefabf65f1b66d1ece5c7e5729e98a4c617c2669 -- prisma/migrations pnpm-lock.yaml pnpm-workspace.yaml experiments/auth-spike
+      - name: Install isolated maintained certificate and NSS tools
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y openssl libnss3-tools
+      - name: Install pinned full Chromium and OS dependencies
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Generate unchanged canonical clients
+        run: pnpm db:generate
+      - name: Independently build isolated Next without runtime credentials
+        run: pnpm next-security:build
+      - name: Execute independent integrated continuity audit privilege and real HTTPS attacks
+        run: pnpm security:integrated:test --reporter=default --reporter=junit --outputFile=provider-proof-test-results/integrated-node.xml
+      - name: Require actual Linux NSS Chromium integrated cookie and logout races
+        if: ${{ !cancelled() }}
+        run: pnpm security:integrated:browser:test --reporter=default --reporter=junit --outputFile=provider-proof-test-results/integrated-browser.xml
+      - name: Build ordinary fixture storefront independently
+        if: ${{ !cancelled() }}
+        run: pnpm build
+      - name: Recheck ordinary dev and production remain authentication-free
+        if: ${{ !cancelled() }}
+        run: pnpm next-security:default-off:test
+      - name: Retain only static sanitized integrated JUnit
+        if: ${{ always() && !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: integrated-security-acceptance-evidence
+          path: |
+            provider-proof-test-results/integrated-node.xml
+            provider-proof-test-results/integrated-browser.xml
+          if-no-files-found: warn
+          retention-days: 7

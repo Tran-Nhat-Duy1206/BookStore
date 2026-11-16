@@ -15,6 +15,7 @@ export default defineConfig({
     },
   },
   test: {
+    env: { BOOKSTORE_CLOCK_QUALITY_DIAGNOSTICS: "1" },
     include: [
       "tests/https-transport/transport.test.ts",
       "tests/https-transport/policy.test.ts",

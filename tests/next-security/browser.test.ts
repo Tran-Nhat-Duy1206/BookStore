@@ -1,7 +1,12 @@
 import { randomBytes } from "node:crypto";
 import { createServer as createHttpsServer } from "node:https";
 import { createServer as createHttpServer, type Server } from "node:http";
-import { chromium, type BrowserContext, type Page } from "@playwright/test";
+import {
+  chromium,
+  type BrowserContext,
+  type Page,
+  type Request,
+} from "@playwright/test";
 import { computeCacheBustingSearchParam } from "next/dist/shared/lib/router/utils/cache-busting-search-param";
 import {
   beforeAll,
@@ -255,17 +260,137 @@ async function nativeClick(purpose: "probe" | "revoke-self" | "sign-out") {
     await cdp.detach();
   }
 }
-async function enhancedClick(purpose: "probe" | "sign-out") {
+// Additive diagnostics ONLY for the one enhanced sign-out scenario. No raw
+// errors/stacks/URLs/headers/body/cookie values or provider/SQL rows are emitted.
+// Other scenarios leave the diagnostic flag false and execute the same awaits.
+// This observes phases, not authentication or a claimed cause of prior failures.
+type EnhancedSignOutStage =
+  | "scenario"
+  | "principal"
+  | "login"
+  | "copied-cookie-read"
+  | "hydration"
+  | "response-listener"
+  | "click"
+  | "response-await"
+  | "response-headers"
+  | "response-assert"
+  | "outcome-wait"
+  | "cleared-cookie-read"
+  | "cookie-zero-assert"
+  | "restore-copied-cookies"
+  | "reload"
+  | "admission-read"
+  | "denied-assert";
+let enhancedSignOutDiagnostic:
+  { pageGet: boolean; pagePost: boolean; ownedCookieCount: number } | undefined;
+function traceEnhancedSignOut(
+  stage: EnhancedSignOutStage,
+  event: "before" | "after" | "failed",
+  error?: unknown,
+): void {
+  const state = enhancedSignOutDiagnostic;
+  if (!state) return;
+  const timeoutClass = error instanceof Error && error.name === "TimeoutError";
+  console.info(
+    `Synthetic enhanced sign-out phase=${stage}, event=${event}, timeoutClass=${timeoutClass}, pageGet=${state.pageGet}, pagePost=${state.pagePost}, ownedCookieCount=${state.ownedCookieCount}.`,
+  );
+}
+async function traceEnhancedSignOutFailureDom(): Promise<void> {
+  if (!enhancedSignOutDiagnostic) return;
+  // FAILURE ONLY: immediate count() reads, never waits/text/HTML/attributes,
+  // navigation, network requests, nonce/cookie inspection or a retry. These
+  // counts are diagnostic observations, NOT substitute admission assertions.
+  try {
+    const [
+      completed,
+      deniedOutcome,
+      section,
+      admittedGuard,
+      deniedGuard,
+      deniedMain,
+      unavailableMain,
+    ] = await Promise.all([
+      page
+        .locator(
+          '[data-action-outcome="completed-without-application-admission"]',
+        )
+        .count(),
+      page.locator('[data-action-outcome="denied-or-unavailable"]').count(),
+      page
+        .locator('section[aria-label="Enhanced native action probes"]')
+        .count(),
+      page.locator('[data-live-guard="admitted-test-session"]').count(),
+      page.locator('[data-live-guard="denied-test-session"]').count(),
+      page.locator('main[data-security-state="denied"]').count(),
+      page.locator('main[data-security-state="unavailable"]').count(),
+    ]);
+    console.info(
+      `Synthetic enhanced sign-out failure DOM available=true, completedCount=${completed}, deniedOutcomeCount=${deniedOutcome}, sectionCount=${section}, admittedGuardCount=${admittedGuard}, deniedGuardCount=${deniedGuard}, deniedMainCount=${deniedMain}, unavailableMainCount=${unavailableMain}.`,
+    );
+  } catch {
+    // Page/realm disappearance is one fixed boolean, not an error serialization.
+    console.info("Synthetic enhanced sign-out failure DOM available=false.");
+  }
+}
+function enhancedSignOutStage<T>(
+  stage: EnhancedSignOutStage,
+  operation: () => Promise<T>,
+  diagnostic: boolean,
+): Promise<T> {
+  if (!diagnostic) return operation();
+  traceEnhancedSignOut(stage, "before");
+  try {
+    return operation().then(
+      (value) => {
+        traceEnhancedSignOut(stage, "after");
+        return value;
+      },
+      async (error: unknown) => {
+        traceEnhancedSignOut(stage, "failed", error);
+        await traceEnhancedSignOutFailureDom();
+        throw error;
+      },
+    );
+  } catch (error) {
+    traceEnhancedSignOut(stage, "failed", error);
+    return traceEnhancedSignOutFailureDom().then(() => {
+      throw error;
+    });
+  }
+}
+async function enhancedClick(
+  purpose: "probe" | "sign-out",
+  diagnostic = false,
+) {
   // Readiness, not authentication; ONE request only after handlers attach.
-  await page.locator('[data-hydrated="ready"]').waitFor();
+  await enhancedSignOutStage(
+    "hydration",
+    () => page.locator('[data-hydrated="ready"]').waitFor(),
+    diagnostic,
+  );
+  if (diagnostic) traceEnhancedSignOut("response-listener", "before");
   const responsePromise = page.waitForResponse(
     (response) =>
       response.request().method() === "POST" &&
       response.url() === `${origin}${SECURITY_PAGE}`,
   );
-  await page.locator(`[data-enhanced="${purpose}"]`).click();
-  const response = await responsePromise,
-    headers = await response.request().allHeaders();
+  if (diagnostic) traceEnhancedSignOut("response-listener", "after");
+  await enhancedSignOutStage(
+    "click",
+    () => page.locator(`[data-enhanced="${purpose}"]`).click(),
+    diagnostic,
+  );
+  const response = await enhancedSignOutStage(
+    "response-await",
+    () => responsePromise,
+    diagnostic,
+  );
+  const headers = await enhancedSignOutStage(
+    "response-headers",
+    () => response.request().allHeaders(),
+    diagnostic,
+  );
   let physical = false,
     rootLayout = false;
   try {
@@ -281,10 +406,19 @@ async function enhancedClick(purpose: "probe" | "sign-out") {
     console.info(
       `Synthetic enhanced form diagnostic exactOrigin=${exact}, physicalSegment=${physical}, rootLayout16=${rootLayout}, status=${status}.`,
     );
+  if (diagnostic) traceEnhancedSignOut("response-assert", "before");
   expect(status === 200 && exact && physical && rootLayout).toBe(true);
-  await page
-    .locator('[data-action-outcome="completed-without-application-admission"]')
-    .waitFor();
+  if (diagnostic) traceEnhancedSignOut("response-assert", "after");
+  await enhancedSignOutStage(
+    "outcome-wait",
+    () =>
+      page
+        .locator(
+          '[data-action-outcome="completed-without-application-admission"]',
+        )
+        .waitFor(),
+    diagnostic,
+  );
 }
 async function directForm(
   purpose: string,
@@ -626,13 +760,82 @@ describe("mandatory actual Linux Chromium Next RSC Action TLS acceptance", () =>
   scenario(
     "enhanced sign-out writes actual Next cookies and retires copied session",
     async () => {
-      await login(await fx.createPrincipal());
-      const copied = await ownedCookies();
-      await enhancedClick("sign-out");
-      expect((await ownedCookies()).length).toBe(0);
-      await context.addCookies(copied);
-      await page.reload({ waitUntil: "domcontentloaded" });
-      expect(await admitted()).toBe(false);
+      enhancedSignOutDiagnostic = {
+        pageGet: false,
+        pagePost: false,
+        ownedCookieCount: -1,
+      };
+      const observePageMethod = (request: Request) => {
+        if (request.url() !== `${origin}${SECURITY_PAGE}`) return;
+        const state = enhancedSignOutDiagnostic;
+        if (state) {
+          state.pageGet = request.method() === "GET";
+          state.pagePost = request.method() === "POST";
+        }
+      };
+      page.on("request", observePageMethod);
+      traceEnhancedSignOut("scenario", "before");
+      try {
+        const principal = await enhancedSignOutStage(
+          "principal",
+          () => fx.createPrincipal(),
+          true,
+        );
+        await enhancedSignOutStage("login", () => login(principal), true);
+        const copied = await enhancedSignOutStage(
+          "copied-cookie-read",
+          async () => {
+            const cookies = await ownedCookies();
+            if (enhancedSignOutDiagnostic)
+              enhancedSignOutDiagnostic.ownedCookieCount = cookies.length;
+            return cookies;
+          },
+          true,
+        );
+        await enhancedClick("sign-out", true);
+        const cleared = await enhancedSignOutStage(
+          "cleared-cookie-read",
+          async () => {
+            const cookies = await ownedCookies();
+            if (enhancedSignOutDiagnostic)
+              enhancedSignOutDiagnostic.ownedCookieCount = cookies.length;
+            return cookies;
+          },
+          true,
+        );
+        traceEnhancedSignOut("cookie-zero-assert", "before");
+        expect(cleared.length).toBe(0);
+        traceEnhancedSignOut("cookie-zero-assert", "after");
+        await enhancedSignOutStage(
+          "restore-copied-cookies",
+          () => context.addCookies(copied),
+          true,
+        );
+        // The count is already known from the exact copied jar, not an additional
+        // browser read, request, wait or source of cookie/identity authority.
+        if (enhancedSignOutDiagnostic)
+          enhancedSignOutDiagnostic.ownedCookieCount = copied.length;
+        await enhancedSignOutStage(
+          "reload",
+          () => page.reload({ waitUntil: "domcontentloaded" }),
+          true,
+        );
+        const stillAdmitted = await enhancedSignOutStage(
+          "admission-read",
+          admitted,
+          true,
+        );
+        traceEnhancedSignOut("denied-assert", "before");
+        expect(stillAdmitted).toBe(false);
+        traceEnhancedSignOut("denied-assert", "after");
+        traceEnhancedSignOut("scenario", "after");
+      } catch (error) {
+        traceEnhancedSignOut("scenario", "failed", error);
+        throw error;
+      } finally {
+        page.off("request", observePageMethod);
+        enhancedSignOutDiagnostic = undefined;
+      }
     },
   );
   scenario(

@@ -8,7 +8,7 @@ const clientHydrated = () => true;
 const serverHydrated = () => false;
 import { probeAction, revokeSelfAction, signOutAction } from "./actions";
 
-type Nonces = { probe?: string; revokeSelf?: string; signOut: string };
+type Nonces = { probe?: string; revokeSelf?: string; signOut?: string };
 export default function EnhancedActions({ nonces }: { nonces: Nonces }) {
   const hydrated = useSyncExternalStore(
     subscribeHydration,
@@ -16,6 +16,8 @@ export default function EnhancedActions({ nonces }: { nonces: Nonces }) {
     serverHydrated,
   );
   const [pending, startTransition] = useTransition();
+  // Instance-local NON-authentication feedback only. The server page always
+  // retains this presentation slot, including when its live guard denies.
   const [outcome, setOutcome] = useState("not-requested");
   function invoke(kind: "probe" | "revoke-self" | "sign-out") {
     const nonce =
@@ -25,6 +27,8 @@ export default function EnhancedActions({ nonces }: { nonces: Nonces }) {
           ? nonces.revokeSelf
           : nonces.signOut;
     if (!nonce) return;
+    // Prior completion cannot stand in for this invocation's awaited result.
+    setOutcome("request-pending");
     const data = new FormData();
     data.set("csrf", nonce);
     startTransition(async () => {
@@ -65,7 +69,7 @@ export default function EnhancedActions({ nonces }: { nonces: Nonces }) {
       ) : null}
       <button
         type="button"
-        disabled={pending || !hydrated}
+        disabled={pending || !hydrated || !nonces.signOut}
         data-enhanced="sign-out"
         onClick={() => invoke("sign-out")}
       >
