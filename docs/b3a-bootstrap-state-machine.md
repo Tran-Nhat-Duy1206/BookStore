@@ -1,0 +1,119 @@
+# B.3a — Proposed SQL/SDK state, transaction and failure contract
+
+**DESIGN ONLY / NOT IMPLEMENTED / NOT EXECUTED.** Read [proposed ADR-021](./adr-021-offline-owner-bootstrap.md) first. All new functions, authority, history and guards remain subject to its B01–B06 blockers and D01–D12 approvals. No executable SQL or setup instructions are supplied. The preserved [base B.3 plan](./batch-3-2b3-plan.md) is not overwritten.
+
+## 1. State and authority vocabulary
+
+Durable case states: `bootstrap_prepared → provider_pending → enrollment_pending → evidence_ready → activated`; `absent` means no case. `cancelled`, `expired`, `failed` are terminal and nonauthorizing. Native operation states (`reserved`, `inflight`, `captured`, `denied`, `unknown`) are separate from case state. Each transition is expected-state/revision CAS, never arbitrary state assignment.
+
+**Commit uncertainty is a caller observation, not proof of durable rollback.** A lost final COMMIT acknowledgement may leave durable activated state. Do not overwrite it with failed or rerun activation. Until exact authorized inspection confirms outcome, caller reports unavailable/unknown and emits no cookie/grant. A genuinely durable terminal negative case never returns to a positive path.
+
+Logical authorities (all NEW proposals except current roots): OFFLINE_APPROVER is ADR A, or explicitly selected B; SETUP_EXECUTOR is only the selected S1/S2 private maintained-SDK composition; AUTH persists native provider work; Guard enforces fixed SQL; current WORKER reconciles deny-only. No external caller supplies observed-success/role/subject authority. Approver owns no SDK credentials; setup process owns no approver/Migrate credential. Custody/independence must be approved, not inferred from multiple DB users.
+
+Proposed policy/identity/approval values are unset. No real or synthetic approval/account is instantiated here. Missing approved expiry/channel/proof/profile blocks execution, rather than silently using fixture defaults.
+
+## 2. Common transaction rules C1–C9
+
+- **C1 isolation/ordering:** every mutating SQL entry checks READ COMMITTED and governance singleton first. Non-reservation edges then lock case→sorted affected subject/candidate→target principal/grant/session/control rows. RESERVATION-SPECIFIC ordering is governance→case ownership/read validation→sorted existing budget keys→setup-operation CAS→replay row, with any required candidate/target row locks only at the reviewed trailing position; never target before budgets. This explicit exception preserves006 budget-before-challenge-CAS order. Source candidate reads are safe only under the shared governance lock; a concrete implementation must prove all writers participate. Private source-trigger writes use governance first and documented deterministic row order. Deadlock/timeout is denial/unknown, never permission or unbounded retry.
+- **C2 time:** use trusted DB time after lock wait, plus unchanged separately committed pre/post/catch clock probes and private full-envelope250ms/25ms/5s assessment. Preserve durable latch even on business rollback; do not generalize existing denial-only COMMIT exception to new partially mutating functions. A new false return after mutation is forbidden: raise/rollback or an explicitly reviewed closed contract. No SDK call until its reservation commit is confirmed.
+- **C3 identity:** immutable case realm/action/identity normalization+evidence/Owner intent/approval policy. Native user ID is attached once after actual successful NEW account creation and committed lookup; no existing identity adoption or cross-user rebind. Matching email/hash or a committed row alone is not native completion. No identity from GitHub, request/GUC or provider flags.
+- **C4 versions:** separate governance revision (g), case revision (c), monotone candidate revision/source root (q/h), and local target authz/permission version (v/p). Capture exact expected values at each authorized edge. ProviderSnapshot is provider-only. Role/status/version changes are separately recorded intended local transitions, not fingerprint fields. Routine bounded source reconciliation may change pending target version; capture/seal it only after known events complete, not adopt a newer version during finalization.
+- **C5 provenance:** existing provider ledger is preserved but insufficient for exact candidate history. Proposed source journal/reservation correlation B03 must exist before any setup execution. Every expected native security mutation advances q; only its precommitted exact transition grammar may be accepted. Unexpected writes/ABA invalidate prior operation/outcome/approval. Reconciliation never manufactures expected-source authority or repairs a candidate.
+- **C6 commits:** case edge/consumption/version/grant/audit atomic on one SQL connection; native signup/password/enable/verification and burns are independent commits. Never hold governance/STAFF locks across SDK or worker call. No claim that transaction:true wraps an entire endpoint or operator ceremony.
+- **C7 audit:** mandatory local success audit in same transaction; minimal opaque case/action/outcome/source refs, no fingerprint/key/credential/cookie/OTP/URI/backups/provider body. Failure/denial goes to a bounded separately authorized sink after locks release; if unavailable report evidence-unavailable honestly, never success or guaranteed terminal-audit durability. New callers/closed vocabulary need ACL/design review.
+- **C8 repetition:** mutation executes once. Same operation ID/conflicting payload denies; status-only inspection never invokes SDK, creates another grant, renews deadline, changes candidate, unburns code or replays cookie. No inflight takeover or retry-after-unknown. Any future identical transaction retry contract must be separately reviewed, not inferred here.
+- **C9 permission result:** EVERY setup edge has zero ordinary admission, normal session controls, normal issue_evidence handles and recent-MFA. SDK session may exist but is purpose-only/unadmitted, cannot satisfy normal guard or be returned as administrator cookie. Late completion after terminal case/expiry is nonprivileged orphan; no activation from it.
+
+## 3. Exact transition registry (all PROPOSED)
+
+### E0 — absent → bootstrap_prepared
+
+- **Trusted initiator:** independent authorized OFFLINE_APPROVER after D01/D02 proof/action approval; not first web user or AUTH. Proposed begin operation from ADR manifest.
+- **Precondition/CAS:** exact expected uninitialized g, no initial case/used action, no collision requiring identity adoption; fixed initial Owner action/realm/intended identity and approved expiry. Canonical case/op ID allocated/bound server-side to immutable preauthorization, not caller-chosen positive authority.
+- **SQL/locks/isolation:** C1 governance→case uniqueness; READ COMMITTED and C2 post-wait time. In one local transaction create case c=initial, store proof/approval/policy references, transition governance uninitialized→bootstrap (g advances) and append audit. No account/role/admission.
+- **SDK/source commit:** NONE. Existing identity collision denies/quarantines; no provider lookup that grants from email.
+- **Crash/status:** before commit no case; after commit only bootstrap_prepared. Lost acknowledgement means status inspection, not second begin. No normal permission. Concurrent contender loses at governance/unique case/expected g. Case cancellation cannot reopen uninitialized.
+
+### E1 — bootstrap_prepared → provider_pending
+
+- **Trusted initiator:** private SETUP_EXECUTOR for that independently authorized case; no new subject/role from its inputs.
+- **Precondition/CAS:** exact current c/g, proof/policy/expiry still valid; authorized case operation create; no prior provider operation or ambiguous account attempt. Existing provider identity is not reused.
+- **SQL/locks:** C1/C2; reserve one-use create operation +same password budget if password-bearing +source-history expectation/deadline and audit. Advance c/state atomically, RELEASE all locks/connection. Store intended identity and new-creation ownership, never passwords/hash/seed in case.
+- **SDK/source:** only after confirmed commit invoke selected maintained private signUp operation; signup currently disabled, so B02 must have selected its supported fixed API/config first. Native password hashing/User+Account/possible Session are its own commits; source ledger/candidate revision must be in SAME provider transactions. Native auto-sign-in is not independent password proof/admission; fixed separate sign-in required.
+- **Crash/status:** reserved but not called / called with unknown result remains nonauthorizing; do not auto-rerun creation or adopt a same-email row. Successful source with lost local outcome may be orphan. Next edge only after actual private completion +durable exact binding. Audit rollback prevents reservation, not a previously committed SDK call. SDK/session cookies stay private.
+
+### E2 — provider_pending → enrollment_pending
+
+- **Trusted initiator:** same private maintained-SDK owner, not supplied metadata/flag.
+- **Precondition/CAS:** exact create operation/c/g and source candidate history, native returned NEW identity matches independently approved intended identity, committed account ownership verified. Independent identity→emailVerified mapping must be specifically approved (B02); signup false default cannot be bypassed by trusting submitted flags. Case binds native subject exactly once.
+- **SQL/SDK phases:** capture actual creation privately; case-limited binding may create ONLY a pending principal for that subject if the ratified manifest explicitly permits it, never active/grants. Before fresh password proof commit a new fixed primary operation +same existing password charge, trusted pre-password origin and120s deadline. Release locks; maintained sign-in; exact effective-cookie/current committed user/SID/token check. Then C1/C2 CAS binds primary cookie/SID/current q/h and pending versions +audit, entering enrollment_pending. No uncertain intermediate step is skipped.
+- **Source:** provider creation and each password session source event/candidate history independently committed; exact predecessor/source operation binding required. Relevant pending/BLOCKED evidence must be processed by bounded deny-only worker outside held locks and original source history rechecked. Worker cannot attach/approve case.
+- **Crash/status:** password success before bind failure leaves nonadmitted session; bind audit failure rolls back only bind/pending state. No primary cookie substitution/new user/renewed120s origin or password replay on unknown. No normal permission/cookie delivery.
+
+### E2a — enrollment_pending → enrollment_pending (prepare exact factor)
+
+- **Trusted initiator:** private SETUP_EXECUTOR, authorized fixed enable operation with current maintained session/password proof.
+- **Precondition/CAS:** exact primary/c/g/q/h/target version and nonexpired120s origin. Native enable requires password reproof, charge SAME password budget before work; no assumed native challenge quota coverage.
+- **SQL/SDK/source:** reserve one-use enable with exact candidate/write grammar +audit, commit/release; invoke maintained enable with verification-on-enable retained. It may create/overwrite an unverified factor and return secret URI/backups. Do not call until the selected secret channel is approved; this task creates/displays none. Commit source journal/ledger with source changes; bind the exact factor ID, encrypted secret/backups projections and new q/h in a case CAS after actual completion/current committed read. This is the recorded authorized transition, not latest candidate adoption.
+- **Crash/status:** partial/missing output, factor overwrite/re-enable, changed credentials or unproven history denies/terminally invalidates old operation. No automatic secret regeneration or second enable attempt, no adjustment of original primary deadline. Any new explicit replacement case would require separate authority outside this design's current scope.
+
+### E3 — enrollment_pending → evidence_ready
+
+- **Trusted initiator:** private SETUP_EXECUTOR after exact pending factor/primary binding, not OFFLINE_APPROVER asserting verification.
+- **Precondition/CAS:** exact c/g/q/h/factor/cookie, original primary still fresh, approved source grammar and no unexpected critical pending/BLOCKED; case/approval expiry never extends120s/30s.
+- **SQL reserve:** C1 governance/case, sorted same MFA budget keys, operation CAS then SAME user+exact6digit replay entry; preserve180s retention and operation deadline min(original primary, reserve+30s). Commit charge/burn/ownership/audit BEFORE native compare; reservation alone grants no evidence. Unknown reserve commit ⇒ NO SDK.
+- **SDK/source:** actual maintained verifyTOTP once, no patched code/clock and no trust-device bypass. Expected candidate grammar: captured factor verified false→true with identical ID/user/secret/backups; User enabled false→true with identity/email/emailVerified unchanged; native session rotation/deletion separately linked. Every expected security write advances q/history in its own provider transaction; B03 causal binding REQUIRED. Native JSON old token ignored. Await entire operation, apply validated cookie deletions/updates, maintained getSession cache/refresh off, independent committed current SID/user/token/expiry and retired-history checks.
+- **Local capture:** after released native locks and bounded deny-only reconciliation, CAS capture exact source transcript/root/current q, new committed SID/cookie and target versions; mandatory setup-outcome audit. Deadline/clock/burn still valid. Outcome produces evidence_ready setup-only reference, NO ordinary issue_evidence/admission/recent MFA.
+- **Crash/status:** invalid/timeout/partial commit or later lookup/audit failure never refunds burn or fabricates setup outcome. Old pending factor flags/session are not recovery evidence. No retry of native comparison/operation or cookie replay. An extra field/source mutation, ABA, unexpected rotation or missing committed SID invalidates outcome even if final snapshot looks equal.
+
+### E3s — evidence_ready → evidence_ready (independent seal)
+
+- **Trusted initiator:** independent OFFLINE_APPROVER, not AUTH/setup executor/worker. It approves current exact completed candidate, not MFA success from flags.
+- **Precondition/CAS:** exact g/c/q/provider root, private current setup-outcome reference, independently approved intended identity/Owner local transition, expected pending principal/authz/permission versions; unconsumed/unexpired initial authority. All source changes reconciled but journal remains exact; no critical pending/BLOCKED event. Still within original verification deadline per ADR's no-extension proposal.
+- **SQL:** governance→case→candidate/target; READ COMMITTED post-wait time. Seal immutable approval ID/body, exact snapshot and distinct local transition/versions with expiry no later than all current bounds; consume/use-counter protection +audit and increment c. ProviderSnapshot contains NO staff fields; seal them separately. No caller hash lets SQL adopt unknown provider data.
+- **SDK/source:** NONE; no source flag mutation to make equality pass. If independent human approval cannot complete within hard deadline, deny/expire rather than extend policy.
+- **Crash/status:** unknown seal commit only status inspection; do not create second approval/extend expiry/reapprove latest q. Source mutation after seal invalidates it. Setup sessions remain unadmitted and outputs secret-free.
+
+### E4 — evidence_ready → activated
+
+- **Trusted initiator:** OFFLINE_APPROVER through exactly one activate capability, not generic table DML.
+- **Precondition/CAS:** exact sealed approval/c/g/q/provider root/realm/action/identity/target v/p, current native completed outcome and burn/deadline, no retired user or pending/BLOCKED/unexplained source event, same intended local transition; approval/outcome unused. Current candidate provider root MUST equal sealed root AND revision; byte equality alone insufficient.
+- **SQL order:** governance→case→candidate→deterministic principal/grants/generation/setup-SID controls. READ COMMITTED; post-wait time +committed clock witnesses. Confirm pending-only target and allowed fixed Owner grant; apply ONLY recorded pending→active/Owner local change with expected versions (including known trigger increments), create ONE NEW immutable approved generation equal to the independently approved ProviderSnapshot, retire all setup SIDs/operations against later delivery, require exactly1 S and1 E owner BOTH this case subject. Transition bootstrap→active via strengthened case-bound guard, consume outcome/approval/case and append local success audit in SAME transaction. No session count in E and no active-governance call from predicate.
+- **SDK/source:** NONE inside held transaction. Provider sessions already committed are not deleted by an awaited separate SDK call while locks held. Deny-only tombstone prevents their use; separately bounded native deletion, if selected, is after commit and not a prerequisite for secretly returning an admin cookie.
+- **Permissions/result:** principal/Owner role and new approved generation exist, but **zero ordinary admissions, normal attempts/session_controls or recent-MFA are created**. Return minimal activated status ONLY, no setup cookie/token. Discard setup artifacts; future fresh canonical password+TOTP/new primary/SID/epoch required, with original ordinary B.2 checks unchanged.
+- **Crash/status:** audit/constraint failure rolls back local pin+activation+consumption, NOT earlier SDK/source/burns. Unknown COMMIT may have activated; inspect exact case only, no activation replay/re-pin/second grant. Exactly one activation winner; cancelled/expired case rejects late native/outcome. No reset/Owner replacement/recovery transition allowed.
+
+## 4. Terminal edges and inspection
+
+**EX cancel/expire/fail:** from any nonactivated case, authenticated fixed-purpose caller rechecks previous state/c/g and applicable q/version, takes common locks, records static cause +terminal state/consumption barrier +redacted local audit atomically. Expiry is DB post-wait, not background timer permission. Any previously committed source/burn/session remains, but late capture/seal/activation denies. Preserve spent IDs/history; no cascade cleanup, auto-case reuse or governance bootstrap→uninitialized. Activation winning first returns already-activated status only; cancellation cannot undo committed activation. No failure function may reset key/witness/burn/generation.
+
+**ES inspection:** currently authorized case caller supplies immutable known case/operation binding, no arbitrary user/SQL selector. Return bounded state/revision/confirmed terminal reason/consumption only, no root/secret/SDK cookie. It does not establish a previously uncertain SDK comparison from row existence, resume inflight work or renew policy. If current state cannot be proved, stay unavailable/unknown. A definite activated case may be reported without granting admission; a definite failed/expired/cancelled case stays denied. Status rights do not survive revoked operator authority automatically.
+
+## 5. Failure and threat matrix
+
+| Threat / failure | Required barrier and observable result in later tests |
+|---|---|
+| First-user/unauthorized bootstrap | No public entry; independent begin authority +initial governance revision +unique case. No case/identity/grant from caller request. |
+| Identity collision/substitution | NEW maintained create must actually succeed for bound identity; collision/error is terminal, no same-email adoption/rebinding/linking. D01 proof not SDK flag. |
+| Forged operator approval | Fixed selected authenticated root, independent custody, immutable exact action/realm/case/revision/expiry; no bearer/GUC/JSON success self-attestation. D02/D03 trust cannot be manufactured by SQL. |
+| Replayed/expired/duplicate case | State/revision/one-use approval+action CAS, DB after-wait expiry, retained history. Duplicate operation never repeats SDK, changes subject or extends TTL. |
+| Concurrent begin/activate/cancel | Same governance and case uniqueness/locks; one winner. Losing branch nonauthorizing; committed winner never retroactively rolled back. |
+| MFA/session flags treated as approval | Actual maintained completion +private recorder AND independent exact-generation seal both needed. Setup outcome cannot normal-finalize; no admission on any edge. |
+| Cross-purpose OTP replay | SAME global user/exact-code key/store before native, all purposes/processes/generations; burn persists on crash/denial. Reusing setup OTP for subsequent login denies while burn live. |
+| Stale versions / changed factor / pre-pin ABA | q/source root +exact expected grammar +target version CAS. Every critical OLD/NEW subject/provider transition tracked. Unexplained committed change invalidates; final equal bytes insufficient. B03 is open, not solved by this text. |
+| Provider partial commit/orphan/new cookie | Source effects may persist; no outcome/cookie/grant on error. Setup SID tombstones and ordinary guard deny, no repair from flags. |
+| Missing/PENDING/BLOCKED ledger or source journal | Deny activation; preserve evidence. Worker bounded deny-only outside held locks, never advances case or automatically reapproves. |
+| Audit failure / sink outage | Local transition rolls back; earlier source/burn remains. Separate failure recording bounded/unavailable honest; no fake success or universal terminal-audit guarantee. |
+| SQL privilege abuse | No private DML/secret SELECT/MAC oracle/DDL/TRUNCATE/membership/trigger disable. Selected new EXEC manifests strictly checked; current profiles unchanged until approved. Offline owner compromise outside enforced role boundary. |
+| Last E-owner retirement/race | Generation-aware same-source-transaction assertion after row retirement, common governance. Nonempty secret/hash change can deny despite structural count; no worker gap/recovery bypass. |
+| Unknown COMMIT | No automatic retry; status-only on exact case; may be activated already. Never call uncertain rollback certain or reissue cookies/pin. |
+| Clock-quality/DB/backlog capacity | Full envelope250ms/25ms/5s and deadlines remain; bound exceeded ⇒ unavailable, not stale proof/fallback. No SLA or earlier-endpoint substitution. |
+| Restore/key/history discontinuity | External OFF/quarantine/lineage invalidation/custody proof required. Same restored case/key/snapshot cannot be trusted automatically; waiting180s alone insufficient. No operational restore in task. |
+
+## 6. T1–T3 design gates and disposition
+
+- **T1 specified, not implementation-proven:** fixed private native setup +same global reservation and source/cookie bindings. BLOCKED on approved setup root/API/identity mapping and exact B03 causal write mechanism. Source shows APIs/rotation and current refusal, not successful B.3a ceremony.
+- **T2 specified, new semantic requiring review:** S/E predicate, common locking, after-statement generation assertions and strict exact-one bootstrap guard. BLOCKED on additive SQL/ACL/visibility/cascade proof and legacy active structural-only migration disposition. No existing last-Owner bypass is silently excused.
+- **T3 specified conditionally:** each local edge and final activation must be atomic and bound to independent seal; native commits separate. BLOCKED on T1/history and approved new functions/policies/authority; no code or accounts until separately authorized.
+
+See [A01–A12](./b3a-bootstrap-acceptance.md) for future executable evidence requirements. Written cases/transition tables are not executed tests. STOP unmerged; no B.3b–e, operational bootstrap, auth endpoints or deployment.

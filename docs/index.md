@@ -46,6 +46,9 @@ Bộ tài liệu tiếng Việt cho dự án BookStore chính thức tại `E:\B
 | [Integrated acceptance ADR-020](./adr-020-integrated-security-acceptance.md) | B.2e reviewed boundaries/findings, required attacks and NOT YET OPERATIONALLY APPROVED continuity runbook |
 | [Batch3.2B.2e validation](./batch-3-2b2e-validation.md) | Frozen findings and failed/pass history; final accepted merge/risk decision linked in B.3 plan and PR#9; no activation |
 | [Batch3.2B.3 planning only](./batch-3-2b3-plan.md) | Accepted B.2e merge/risk decision; gated offline bootstrap, invitations, staff security, recovery and acceptance proposals; NO implementation/activation |
+| [B.3a proposed ADR-021](./adr-021-offline-owner-bootstrap.md) | Offline authority A/B, T1 global replay, T2 Owner generation protection; new trust/history contracts BLOCK implementation pending owner review |
+| [B.3a state/failure contract](./b3a-bootstrap-state-machine.md) | Every SQL/SDK edge, CAS/locks/audit/COMMIT uncertainty, zero ordinary admission and threat matrix; DESIGN ONLY |
+| [B.3a A01–A12 registry](./b3a-bootstrap-acceptance.md) | Stable future real SDK/PG acceptance cases and T1–T3 gates; REQUIRED/NOT EXECUTED |
 | [Staff security plan](./batch-3-2-security-plan.md)                       | Proposed full boundary; no operational authorization                                     |
 | [Auth spike ADR-011](./adr-011-authentication-spike-provider.md)          | Exact provider/version and isolated evaluation scope                                     |
 | [Session/MFA ADR-012](./adr-012-staff-session-and-mfa.md)                 | Admission, expiration and recovery restrictions                                          |
