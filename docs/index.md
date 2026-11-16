@@ -48,6 +48,7 @@ Bộ tài liệu tiếng Việt cho dự án BookStore chính thức tại `E:\B
 | [Batch3.2B.3 planning only](./batch-3-2b3-plan.md) | Accepted B.2e merge/risk decision; gated offline bootstrap, invitations, staff security, recovery and acceptance proposals; NO implementation/activation |
 | [B.3a proposed ADR-021](./adr-021-offline-owner-bootstrap.md) | Offline authority A/B, T1 global replay, T2 Owner generation protection; new trust/history contracts BLOCK implementation pending owner review |
 | [B.3a state/failure contract](./b3a-bootstrap-state-machine.md) | Every SQL/SDK edge, CAS/locks/audit/COMMIT uncertainty, zero ordinary admission and threat matrix; DESIGN ONLY |
+| [B.3a critical blocker investigation](./b3a-critical-blocker-resolution.md) | Pinned adapter/hook evidence, B03 C1/C2/C3 candidates, combined A/S1/L trust, H1/H2 human deadlines and compact owner decisions; no runtime proof |
 | [B.3a A01–A12 registry](./b3a-bootstrap-acceptance.md) | Stable future real SDK/PG acceptance cases and T1–T3 gates; REQUIRED/NOT EXECUTED |
 | [Staff security plan](./batch-3-2-security-plan.md)                       | Proposed full boundary; no operational authorization                                     |
 | [Auth spike ADR-011](./adr-011-authentication-spike-provider.md)          | Exact provider/version and isolated evaluation scope                                     |
