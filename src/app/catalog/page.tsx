@@ -24,6 +24,17 @@ export default async function Catalog({
     ? requestedSort
     : "default";
   const items = discoverBooks(books, { query: q, category, sort });
+
+  // Category links use the submitted URL state, not unsaved form edits.
+  function categoryHref(nextCategory: string) {
+    const filters = new URLSearchParams();
+    if (q) filters.set("q", q);
+    if (nextCategory !== "all") filters.set("category", nextCategory);
+    if (sort !== "default") filters.set("sort", sort);
+    const query = filters.toString();
+    return query ? `/catalog?${query}` : "/catalog";
+  }
+
   return (
     <div className="container">
       <div className="page-heading">
@@ -82,31 +93,32 @@ export default async function Catalog({
           </button>
         </form>
         <div className="chip-row">
-          <Link
+          {/* Native links reset unsaved controls even when the URL is already current. */}
+          <a
             className="chip"
-            href="/catalog"
+            href={categoryHref("all")}
             aria-current={category === "all"}
           >
             Tất cả
-          </Link>
+          </a>
           {categories.map((c) => (
-            <Link
+            <a
               className="chip"
-              href={`/catalog?category=${c.id}`}
+              href={categoryHref(c.id)}
               aria-current={category === c.id}
               key={c.id}
             >
               {c.label}
-            </Link>
+            </a>
           ))}
         </div>
         <div className="result-line">
           <span>
             {items.length} sách minh họa{q && ` cho “${q}”`}
           </span>
-          <Link className="text-link" href="/catalog">
+          <a className="text-link" href="/catalog">
             Xóa bộ lọc
-          </Link>
+          </a>
         </div>
         {items.length ? (
           <div className="catalog-grid">

@@ -181,6 +181,148 @@ test("URL navigation resets dirty catalog controls", async ({ page }) => {
   await expect(page.getByLabel("Thể loại", { exact: true })).toHaveValue("all");
 });
 
+test("category links retain submitted filters through navigation and history", async ({
+  page,
+}) => {
+  await page.goto("/catalog");
+  const query = page.getByLabel("Tên sách, tác giả hoặc nội dung");
+  const category = page.getByLabel("Thể loại", { exact: true });
+  const sort = page.getByLabel("Sắp xếp", { exact: true });
+  const chips = page.locator(".chip-row");
+  const cards = page.locator(".book-card h3");
+  const count = page.locator(".result-line span");
+  const submitted = "Tiếng Việt";
+
+  await query.fill(submitted);
+  await sort.selectOption("title");
+  await page.getByRole("button", { name: "Tìm & lọc" }).click();
+  await expect(count).toHaveText(`12 sách minh họa cho “${submitted}”`);
+
+  const activeLink = chips.getByRole("link", {
+    name: "Light novel",
+    exact: true,
+  });
+  await query.fill("bản nháp");
+  await sort.selectOption("recent");
+  // Tab from the preceding chip to test keyboard order and focus visibility.
+  await chips.getByRole("link", { name: "Văn học", exact: true }).focus();
+  await page.keyboard.press("Tab");
+  await expect(activeLink).toBeFocused();
+  await expect(activeLink).toHaveCSS("outline-style", "solid");
+  await page.keyboard.press("Enter");
+
+  const expectLightNovel = async () => {
+    await expect(page).toHaveURL(
+      (url) =>
+        url.pathname === "/catalog" &&
+        url.searchParams.get("q") === submitted &&
+        url.searchParams.get("sort") === "title" &&
+        url.searchParams.get("category") === "light-novel",
+    );
+    await expect(query).toHaveValue(submitted);
+    await expect(sort).toHaveValue("title");
+    await expect(category).toHaveValue("light-novel");
+    await expect(chips.locator('[aria-current="true"]')).toHaveText(
+      "Light novel",
+    );
+    await expect(count).toHaveText(`3 sách minh họa cho “${submitted}”`);
+    await expect(cards).toHaveText([
+      "Người giữ những vì sao",
+      "Thành phố ngủ trong mây",
+      "Tiệm trà cuối chân trời",
+    ]);
+  };
+  await expectLightNovel();
+  await query.fill("bản nháp trên cùng danh mục");
+  await sort.selectOption("recent");
+  await activeLink.click();
+  await expectLightNovel();
+  await page.reload();
+  await expectLightNovel();
+  await chips.getByRole("link", { name: "Tất cả", exact: true }).click();
+  await expect(page).toHaveURL(
+    (url) =>
+      url.pathname === "/catalog" &&
+      url.searchParams.get("q") === submitted &&
+      url.searchParams.get("sort") === "title" &&
+      !url.searchParams.has("category"),
+  );
+  await expect(query).toHaveValue(submitted);
+  await expect(sort).toHaveValue("title");
+  await expect(category).toHaveValue("all");
+  await expect(chips.locator('[aria-current="true"]')).toHaveText("Tất cả");
+  await expect(cards).toHaveCount(12);
+  await page.goBack();
+  await expectLightNovel();
+
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          document.documentElement.scrollWidth -
+          document.documentElement.clientWidth,
+      ),
+    )
+    .toBeLessThanOrEqual(0);
+  await page.getByRole("link", { name: "Xóa bộ lọc", exact: true }).click();
+  await expect(page).toHaveURL(/\/catalog$/);
+  await expect(query).toHaveValue("");
+  await expect(sort).toHaveValue("default");
+  await expect(category).toHaveValue("all");
+  await expect(cards).toHaveCount(12);
+});
+
+test.describe("catalog GET navigation without JavaScript", () => {
+  test.use({ javaScriptEnabled: false });
+
+  test("encoded search stays intact in category links and empty results", async ({
+    page,
+  }) => {
+    await page.goto("/catalog");
+    const submitted = "Tiếng Việt & + # % ?";
+    const query = page.getByLabel("Tên sách, tác giả hoặc nội dung");
+    await query.fill(submitted);
+    await page.getByLabel("Sắp xếp", { exact: true }).selectOption("recent");
+    await page.getByRole("button", { name: "Tìm & lọc" }).click();
+    await expect(page).toHaveURL(
+      (url) => url.searchParams.get("q") === submitted,
+    );
+    await expect(page.locator(".result-line span")).toHaveText(
+      `0 sách minh họa cho “${submitted}”`,
+    );
+
+    const manga = page
+      .locator(".chip-row")
+      .getByRole("link", { name: "Manga", exact: true });
+    await query.fill("bản nháp");
+    await manga.click();
+    await expect(page).toHaveURL(
+      (url) =>
+        url.pathname === "/catalog" &&
+        url.searchParams.get("q") === submitted &&
+        url.searchParams.get("sort") === "recent" &&
+        url.searchParams.get("category") === "manga" &&
+        Array.from(url.searchParams.keys()).length === 3 &&
+        !url.hash,
+    );
+    await expect(query).toHaveValue(submitted);
+    await expect(page.getByLabel("Thể loại", { exact: true })).toHaveValue(
+      "manga",
+    );
+    await expect(page.getByLabel("Sắp xếp", { exact: true })).toHaveValue(
+      "recent",
+    );
+    await expect(manga).toHaveAttribute("aria-current", "true");
+    await expect(page.locator(".result-line span")).toHaveText(
+      `0 sách minh họa cho “${submitted}”`,
+    );
+    await expect(
+      page.getByRole("heading", { name: "Chưa tìm thấy câu chuyện này" }),
+    ).toBeVisible();
+    await expect(page.locator(".book-card")).toHaveCount(0);
+  });
+});
+
 test("two tabs preserve independent cart and wishlist changes", async ({
   page,
   context,
