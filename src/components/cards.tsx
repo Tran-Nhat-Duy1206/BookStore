@@ -1,18 +1,31 @@
 import Link from "next/link";
 import { ArrowUpRight, ArrowRight } from "lucide-react";
+import {
+  catalogFilterSuffix,
+  type CatalogFilters,
+} from "@/modules/catalog/filter-url";
 import type { Book, Series } from "@/modules/catalog/contracts";
 import type { Article, Release } from "@/modules/editorial/data";
 import { BookCover } from "./book-cover";
 import { BookTilt, Reveal } from "./motion";
 import { WishlistButton } from "./demo-state";
 
-export function BookCard({ book, index = 0 }: { book: Book; index?: number }) {
+export function BookCard({
+  book,
+  index = 0,
+  catalogFilters,
+}: {
+  book: Book;
+  index?: number;
+  catalogFilters?: CatalogFilters;
+}) {
+  const href = `/products/${book.slug}${catalogFilters ? catalogFilterSuffix(catalogFilters) : ""}`;
   return (
     <article className="book-card">
       <Reveal delay={(index % 5) * 0.04}>
         <div className="book-stage">
           <Link
-            href={`/products/${book.slug}`}
+            href={href}
             className="cover-link"
             aria-label={`Xem ${book.title}`}
           >
@@ -26,7 +39,7 @@ export function BookCard({ book, index = 0 }: { book: Book; index?: number }) {
         <div className="book-info">
           <p className="eyebrow">{book.edition}</p>
           <h3>
-            <Link href={`/products/${book.slug}`}>{book.title}</Link>
+            <Link href={href}>{book.title}</Link>
           </h3>
           <p>{book.author}</p>
           <span className="demo-caption">Sách minh họa · Chưa mở bán</span>
@@ -35,11 +48,22 @@ export function BookCard({ book, index = 0 }: { book: Book; index?: number }) {
     </article>
   );
 }
-export function BookGrid({ items }: { items: Book[] }) {
+export function BookGrid({
+  items,
+  catalogFilters,
+}: {
+  items: Book[];
+  catalogFilters?: CatalogFilters;
+}) {
   return (
     <div className="book-grid">
       {items.map((book, index) => (
-        <BookCard key={book.id} book={book} index={index} />
+        <BookCard
+          key={book.id}
+          book={book}
+          index={index}
+          catalogFilters={catalogFilters}
+        />
       ))}
     </div>
   );

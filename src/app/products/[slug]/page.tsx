@@ -1,6 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { readCatalog } from "@/modules/catalog/read-catalog";
+import {
+  catalogFilterSuffix,
+  readCatalogFilters,
+  type FilterParams,
+} from "@/modules/catalog/filter-url";
 import { releases } from "@/modules/editorial/data";
 import { BookCover } from "@/components/book-cover";
 import { BookTilt } from "@/components/motion";
@@ -18,13 +23,19 @@ export async function generateMetadata({
 }
 export default async function ProductPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string }>;
+  searchParams: Promise<FilterParams>;
 }) {
   const { books, categories, series } = await readCatalog();
   const { slug } = await params;
   const book = books.find((b) => b.slug === slug);
   if (!book) notFound();
+  const catalogSuffix = catalogFilterSuffix(
+    readCatalogFilters(await searchParams, categories),
+  );
+  const genre = categories.find(({ id }) => id === book.category);
   const collection = series.find((s) => s.id === book.seriesId);
   const release = releases.find((r) => r.bookId === book.id);
   const related = books.filter(
@@ -40,7 +51,11 @@ export default async function ProductPage({
         <div className="breadcrumb">
           <Link href="/">Trang chủ</Link>
           <span>/</span>
-          <Link href="/catalog">Kệ sách</Link>
+          {catalogSuffix ? (
+            <Link href={`/catalog${catalogSuffix}`}>Trở lại kết quả</Link>
+          ) : (
+            <Link href="/catalog">Kệ sách</Link>
+          )}
           <span>/</span>
           <span>{book.title}</span>
         </div>
@@ -54,8 +69,7 @@ export default async function ProductPage({
           </div>
           <div>
             <p className="eyebrow">
-              {categories.find((c) => c.id === book.category)?.label} · TÁC PHẨM
-              HƯ CẤU
+              {genre && `${genre.label} · `}TÁC PHẨM HƯ CẤU
             </p>
             <h1>{book.title}</h1>
             <p className="product-description">{book.description}</p>
@@ -93,6 +107,17 @@ export default async function ProductPage({
               <AddToCart id={book.id} />
               <WishlistButton id={book.id} label={book.title} full />
             </div>
+            {genre && genre.id !== "all" && (
+              <p>
+                <Link
+                  className="text-link"
+                  href={`/catalog${catalogFilterSuffix({ q: "", category: genre.id, sort: "default" })}`}
+                >
+                  Xem thêm sách thuộc thể loại {genre.label}{" "}
+                  <span aria-hidden="true">→</span>
+                </Link>
+              </p>
+            )}
             {collection && (
               <p>
                 <Link className="text-link" href={`/series/${collection.slug}`}>

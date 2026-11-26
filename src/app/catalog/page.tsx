@@ -1,29 +1,29 @@
 import Link from "next/link";
 import { Search, ArrowRight } from "lucide-react";
 import { readCatalog } from "@/modules/catalog/read-catalog";
+import {
+  catalogFilterSuffix,
+  readCatalogFilters,
+  type FilterParams,
+} from "@/modules/catalog/filter-url";
 import { discoverBooks } from "@/modules/catalog/search";
 import { BookGrid } from "@/components/cards";
 export const metadata = { title: "Kệ sách minh họa" };
-type Params = Record<string, string | string[] | undefined>;
 export default async function Catalog({
   searchParams,
 }: {
-  searchParams: Promise<Params>;
+  searchParams: Promise<FilterParams>;
 }) {
   const { books, categories } = await readCatalog();
-  const params = await searchParams;
-  const q = typeof params.q === "string" ? params.q : "";
-  const requestedCategory =
-    typeof params.category === "string" ? params.category.trim() : "all";
-  const category = categories.some((item) => item.id === requestedCategory)
-    ? requestedCategory
-    : "all";
-  const requestedSort =
-    typeof params.sort === "string" ? params.sort.trim() : "default";
-  const sort = ["default", "title", "recent"].includes(requestedSort)
-    ? requestedSort
-    : "default";
+  const filters = readCatalogFilters(await searchParams, categories);
+  const { q, category, sort } = filters;
   const items = discoverBooks(books, { query: q, category, sort });
+
+  // Category links use the submitted URL state, not unsaved form edits.
+  function categoryHref(nextCategory: string) {
+    return `/catalog${catalogFilterSuffix({ ...filters, category: nextCategory })}`;
+  }
+
   return (
     <div className="container">
       <div className="page-heading">
@@ -82,35 +82,36 @@ export default async function Catalog({
           </button>
         </form>
         <div className="chip-row">
-          <Link
+          {/* Native links reset unsaved controls even when the URL is already current. */}
+          <a
             className="chip"
-            href="/catalog"
+            href={categoryHref("all")}
             aria-current={category === "all"}
           >
             Tất cả
-          </Link>
+          </a>
           {categories.map((c) => (
-            <Link
+            <a
               className="chip"
-              href={`/catalog?category=${c.id}`}
+              href={categoryHref(c.id)}
               aria-current={category === c.id}
               key={c.id}
             >
               {c.label}
-            </Link>
+            </a>
           ))}
         </div>
         <div className="result-line">
           <span>
             {items.length} sách minh họa{q && ` cho “${q}”`}
           </span>
-          <Link className="text-link" href="/catalog">
+          <a className="text-link" href="/catalog">
             Xóa bộ lọc
-          </Link>
+          </a>
         </div>
         {items.length ? (
           <div className="catalog-grid">
-            <BookGrid items={items} />
+            <BookGrid items={items} catalogFilters={filters} />
           </div>
         ) : (
           <div className="empty-state">
