@@ -23,8 +23,7 @@ export const metadata: Metadata = {
     default: `${site.name} — Một góc nhỏ, ngàn câu chuyện`,
     template: `%s | ${site.name}`,
   },
-  description:
-    "Không gian bookstore minh họa: khám phá sách hư cấu, bộ truyện và chuyện sau những trang sách. Chưa mở bán.",
+  description: `${site.name} là không gian sách minh họa: khám phá sách hư cấu, bộ truyện và chuyện sau những trang sách. Chưa mở bán.`,
   robots: { index: false, follow: false },
 };
 export default async function RootLayout({

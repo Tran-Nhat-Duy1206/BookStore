@@ -137,6 +137,10 @@ async function verifyFailure(mode: "database" | "invalid-source", url: string) {
           level: 1,
         });
         await expect(title).toBeVisible();
+        await expect(
+          page.getByRole("main").getByText("Cá Tỏ BookStore", { exact: true }),
+        ).toBeVisible();
+        await expect(page).toHaveTitle(`${heading} | Cá Tỏ BookStore`);
         await expect(page.getByText(guidance, { exact: true })).toBeVisible();
         const retry = page.getByRole("link", {
           name: "Thử lại",

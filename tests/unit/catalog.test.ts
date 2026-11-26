@@ -169,13 +169,15 @@ describe("Vietnamese fictional catalog integrity", () => {
 
   it("disables commerce and avoids pricing, stock, or fulfillment claims in fixtures", () => {
     expect(site).toMatchObject({
-      name: "Mộc & Mực",
+      name: "Cá Tỏ BookStore",
       locale: "vi-VN",
       currency: "VND",
       timeZone: "Asia/Ho_Chi_Minh",
       commercialEnabled: false,
     });
-    expect(site.demoNotice).toContain("tạm thời");
+    expect(site.demoNotice).toContain(
+      "Cá Tỏ BookStore là không gian sách minh họa.",
+    );
     expect(site.demoNotice).toContain("hư cấu");
     expect(site.demoNotice).toContain("Không bán hàng");
     expect(site.demoNotice).toContain("không dùng tranh bìa có bản quyền");
