@@ -1,8 +1,8 @@
-# Mộc & Mực — BookStore
+# Cá Tỏ BookStore
 
-Cozy Bookstore Frontend Foundation cho repository chính thức [Tran-Nhat-Duy1206/BookStore](https://github.com/Tran-Nhat-Duy1206/BookStore).
+Nền tảng giao diện Cá Tỏ BookStore cho repository chính thức [Tran-Nhat-Duy1206/BookStore](https://github.com/Tran-Nhat-Duy1206/BookStore).
 
-**Mộc & Mực là tên tạm thời.** Toàn bộ sách, tác giả, bài viết và lịch phát hành đều hư cấu. Bìa là hình học/SVG nguyên bản được tạo cho dự án. Không có cửa hàng, địa chỉ, tồn kho, ISBN hoặc sản phẩm bán thật được công bố.
+**Cá Tỏ BookStore là không gian sách minh họa, không bán hàng.** Toàn bộ sách, tác giả, bài viết và lịch phát hành đều hư cấu. Bìa là hình học/SVG nguyên bản được tạo cho dự án. Không có cửa hàng, địa chỉ, tồn kho, ISBN hoặc sản phẩm bán thật được công bố.
 
 ## Chạy tại máy
 
