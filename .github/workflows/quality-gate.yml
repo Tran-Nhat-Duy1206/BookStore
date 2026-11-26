@@ -559,7 +559,13 @@ jobs:
       - name: Bind accepted-main migration dependency and spike bytes
         run: |
           git merge-base --is-ancestor aefabf65f1b66d1ece5c7e5729e98a4c617c2669 HEAD
-          git diff --exit-code aefabf65f1b66d1ece5c7e5729e98a4c617c2669 -- prisma/migrations pnpm-lock.yaml pnpm-workspace.yaml experiments/auth-spike
+          git diff --exit-code aefabf65f1b66d1ece5c7e5729e98a4c617c2669 -- prisma/migrations experiments/auth-spike
+          # Pin the complete dependency inputs to the independently reviewed
+          # GHSA-7589-6fvf-x4pw remediation, not to the candidate under test.
+          reviewed_dependencies=c6739f9dfeca14ef0e90461fca6188a4aa431263
+          git merge-base --is-ancestor "$reviewed_dependencies" HEAD
+          git diff --exit-code "$reviewed_dependencies" HEAD -- package.json pnpm-lock.yaml pnpm-workspace.yaml
+          git diff --exit-code "$reviewed_dependencies" -- package.json pnpm-lock.yaml pnpm-workspace.yaml
       - name: Install isolated maintained certificate and NSS tools
         run: sudo apt-get update && sudo apt-get install --no-install-recommends -y openssl libnss3-tools
       - name: Install pinned full Chromium and OS dependencies
