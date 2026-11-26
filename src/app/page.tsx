@@ -165,7 +165,8 @@ export default async function Home() {
         <SectionHeading
           kicker="NHỮNG CÂU CHUYỆN CÒN TIẾP"
           title="Ở lại cùng một bộ truyện"
-          href="/catalog"
+          href="/series"
+          linkText="Xem tất cả bộ truyện"
         />
         <div className="series-grid">
           {series.map((item) => (

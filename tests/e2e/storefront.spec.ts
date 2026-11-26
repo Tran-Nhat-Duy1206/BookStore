@@ -680,8 +680,84 @@ test("invalid series comparisons offer a safe recovery without substituting book
   await expect(page).toHaveURL("/catalog");
 });
 
+const publicSeries = [
+  { title: "Những mùa ở Lũng Mây", slug: "nhung-mua-o-lung-may" },
+  { title: "Trạm dừng giữa những vì sao", slug: "tram-dung-giua-nhung-vi-sao" },
+];
+
+async function expectPublicSeries(page: import("@playwright/test").Page) {
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+    "Tất cả bộ truyện",
+  );
+  const cards = page.locator("main .series-card");
+  await expect(cards.getByRole("heading")).toHaveText(
+    publicSeries.map(({ title }) => title),
+  );
+  for (const [index, { slug }] of publicSeries.entries()) {
+    await expect(cards.nth(index)).toHaveAttribute("href", `/series/${slug}`);
+  }
+}
+
+test("series index lists every public series in order and supports keyboard discovery", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 750 });
+  await page.goto("/");
+  const discover = page.getByRole("link", {
+    name: "Xem tất cả bộ truyện",
+    exact: true,
+  });
+  await expect(discover).toHaveAttribute("href", "/series");
+  await discover.click();
+  await expect(page).toHaveURL("/series");
+  await expectPublicSeries(page);
+  await page.goto("/series");
+  await expectPublicSeries(page);
+  await expect(page).toHaveTitle(/Bộ truyện minh họa/);
+  await page.reload();
+  await expectPublicSeries(page);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          document.documentElement.scrollWidth -
+          document.documentElement.clientWidth,
+      ),
+    )
+    .toBeLessThanOrEqual(0);
+  const firstCard = page.locator("main .series-card").first();
+  await page
+    .locator("main .breadcrumb")
+    .getByRole("link", { name: "Trang chủ" })
+    .focus();
+  await page.keyboard.press("Tab");
+  await expect(firstCard).toBeFocused();
+  await expect(firstCard).toHaveCSS("outline-style", "solid");
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(`/series/${publicSeries[0].slug}`);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+    publicSeries[0].title,
+  );
+});
+
 test.describe("catalog GET navigation without JavaScript", () => {
   test.use({ javaScriptEnabled: false });
+
+  test("homepage series shelf opens the index and its detail links without JavaScript", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await page
+      .getByRole("link", { name: "Xem tất cả bộ truyện", exact: true })
+      .click();
+    await expect(page).toHaveURL("/series");
+    await expectPublicSeries(page);
+    await page.locator("main .series-card").nth(1).click();
+    await expect(page).toHaveURL(`/series/${publicSeries[1].slug}`);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+      publicSeries[1].title,
+    );
+  });
 
   test("series comparison submits a native GET without JavaScript", async ({
     page,
@@ -976,6 +1052,7 @@ test("essential routes pass automated accessibility checks", async ({
     "/",
     "/catalog",
     "/products/khu-vuon-sau-con-mua",
+    "/series",
     "/news",
     "/releases",
     "/wishlist",
