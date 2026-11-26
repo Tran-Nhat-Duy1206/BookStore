@@ -6,18 +6,19 @@ import {
   readCatalogFilters,
   type FilterParams,
 } from "@/modules/catalog/filter-url";
-import { discoverBooks } from "@/modules/catalog/search";
-import { BookGrid } from "@/components/cards";
+import { discoverBooks, discoverSeries } from "@/modules/catalog/search";
+import { BookGrid, SeriesCard } from "@/components/cards";
 export const metadata = { title: "Kệ sách minh họa" };
 export default async function Catalog({
   searchParams,
 }: {
   searchParams: Promise<FilterParams>;
 }) {
-  const { books, categories } = await readCatalog();
+  const { books, categories, series } = await readCatalog();
   const filters = readCatalogFilters(await searchParams, categories);
   const { q, category, sort } = filters;
   const items = discoverBooks(books, { query: q, category, sort });
+  const matchingSeries = discoverSeries(series, q);
 
   // Category links use the submitted URL state, not unsaved form edits.
   function categoryHref(nextCategory: string) {
@@ -53,9 +54,13 @@ export default async function Catalog({
               id="catalog-query"
               name="q"
               type="search"
+              aria-describedby="catalog-query-hint"
               defaultValue={q}
               placeholder="Thử tìm ‘khu vuon’…"
             />
+            <small id="catalog-query-hint">
+              Bạn cũng có thể tìm tên bộ truyện.
+            </small>
           </div>
           <div className="field">
             <label htmlFor="category">Thể loại</label>
@@ -116,7 +121,11 @@ export default async function Catalog({
         ) : (
           <div className="empty-state">
             <Search size={35} aria-hidden="true" />
-            <h2>Chưa tìm thấy câu chuyện này</h2>
+            <h2>
+              {matchingSeries.length > 0
+                ? "Không có sách phù hợp"
+                : "Chưa tìm thấy câu chuyện này"}
+            </h2>
             <p>
               Thử một từ khóa ngắn hơn hoặc bỏ bớt bộ lọc. Bạn có thể tìm tên
               tiếng Việt không dấu.
@@ -126,6 +135,19 @@ export default async function Catalog({
               <ArrowRight size={17} aria-hidden="true" />
             </Link>
           </div>
+        )}
+        {matchingSeries.length > 0 && (
+          <section className="related-section" aria-labelledby="series-results">
+            <h2 id="series-results">Bộ truyện phù hợp</h2>
+            <p>
+              Tìm theo tên bộ truyện, không áp dụng thể loại hoặc sắp xếp sách.
+            </p>
+            <div className="series-grid">
+              {matchingSeries.map((item) => (
+                <SeriesCard key={item.id} item={item} books={books} />
+              ))}
+            </div>
+          </section>
         )}
       </div>
     </div>

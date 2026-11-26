@@ -1,8 +1,42 @@
 import { describe, expect, it } from "vitest";
 import { books, categories, series, type Book } from "@/modules/catalog/data";
-import { discoverBooks, normalizeSearch } from "@/modules/catalog/search";
+import {
+  discoverBooks,
+  discoverSeries,
+  normalizeSearch,
+} from "@/modules/catalog/search";
 import { articles, releases } from "@/modules/editorial/data";
 import { site } from "@/config/site";
+
+describe("public series title search", () => {
+  it.each([
+    "Trạm dừng giữa những vì sao",
+    "tram dung giua nhung vi sao",
+    "  TRẠM \t SAO  ",
+  ])("matches %j using normalized title terms", (query) => {
+    expect(discoverSeries(series, query)).toEqual([series[1]]);
+  });
+
+  it.each(["", " \t", "\u0301", "not a series", "phiêu lưu kỳ ảo"])(
+    "does not match %j",
+    (query) => {
+      expect(discoverSeries(series, query)).toEqual([]);
+    },
+  );
+
+  it("keeps snapshot order and returns each matching ID once", () => {
+    expect(
+      discoverSeries([series[1], series[0], { ...series[1] }], "nhung"),
+    ).toEqual([series[1], series[0]]);
+  });
+
+  it("does not add series-title matches to book results", () => {
+    expect(discoverBooks(books, { query: series[1].title })).toEqual([]);
+    expect(
+      discoverBooks(books, { query: series[0].title }).map(({ slug }) => slug),
+    ).toEqual(["nhung-la-thu-gui-mua-thu", "nhung-mua-o-lung-may-hop-tuyen"]);
+  });
+});
 
 const ids = (items: readonly Book[]) => items.map((book) => book.id);
 

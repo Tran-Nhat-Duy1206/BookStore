@@ -1,4 +1,24 @@
-import type { Book } from "./data";
+import type { Book, Series } from "./data";
+
+/** Chỉ tìm theo tên bộ truyện, giữ nguyên thứ tự của danh mục công khai. */
+export function discoverSeries(
+  items: readonly Series[],
+  query: string,
+): Series[] {
+  const normalized = normalizeSearch(query);
+  if (!normalized) return [];
+
+  const terms = normalized.split(" ");
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const title = normalizeSearch(item.title);
+    if (seen.has(item.id) || !terms.every((term) => title.includes(term))) {
+      return false;
+    }
+    seen.add(item.id);
+    return true;
+  });
+}
 
 /** Chuẩn hóa cả dấu thanh tiếng Việt và chữ đ để tìm kiếm không dấu. */
 export function normalizeSearch(value: string): string {
