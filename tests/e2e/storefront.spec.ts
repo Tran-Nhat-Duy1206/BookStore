@@ -440,8 +440,132 @@ test("product accepts only catalog fields and keeps metadata and 404 behavior", 
   expect(missing?.status()).toBe(404);
 });
 
+const lightNovelCatalog = "/catalog?category=light-novel";
+const lightNovelGenreLink = "Xem thêm sách thuộc thể loại Light novel";
+
+async function expectDefaultLightNovelCatalog(
+  page: import("@playwright/test").Page,
+) {
+  await expect(page).toHaveURL(lightNovelCatalog);
+  await expect(page.getByLabel("Tên sách, tác giả hoặc nội dung")).toHaveValue(
+    "",
+  );
+  await expect(page.getByLabel("Thể loại", { exact: true })).toHaveValue(
+    "light-novel",
+  );
+  await expect(page.getByLabel("Sắp xếp", { exact: true })).toHaveValue(
+    "default",
+  );
+  await expect(page.locator(".result-line span")).toHaveText("3 sách minh họa");
+  await expect(page.locator(".book-card h3 a")).toHaveText([
+    "Tiệm trà cuối chân trời",
+    "Người giữ những vì sao",
+    "Thành phố ngủ trong mây",
+  ]);
+  for (const [index, slug] of [
+    "tiem-tra-cuoi-chan-troi",
+    "nguoi-giu-nhung-vi-sao",
+    "thanh-pho-ngu-trong-may",
+  ].entries()) {
+    await expect(page.locator(".book-card h3 a").nth(index)).toHaveAttribute(
+      "href",
+      `/products/${slug}?category=light-novel`,
+    );
+  }
+}
+
+test("product genre browsing stays distinct from the original search", async ({
+  page,
+  context,
+  isMobile,
+}) => {
+  const path = `/products/${narrowedSlugs[0]}`;
+  const genre = page.getByRole("link", {
+    name: lightNovelGenreLink,
+    exact: true,
+  });
+  const back = page.getByRole("link", { name: "Trở lại kết quả", exact: true });
+  await page.goto(path);
+  await expect(back).toHaveCount(0);
+  await expect(
+    page.locator(".breadcrumb").getByRole("link", { name: "Kệ sách" }),
+  ).toHaveAttribute("href", "/catalog");
+  await expect(genre).toHaveAttribute("href", lightNovelCatalog);
+  if (isMobile) {
+    await genre.tap();
+    await expectDefaultLightNovelCatalog(page);
+    await page.setViewportSize({ width: 320, height: 750 });
+  } else {
+    const opened = context.waitForEvent("page");
+    await genre.click({ button: "middle" });
+    const tab = await opened;
+    await expectDefaultLightNovelCatalog(tab);
+    await tab.close();
+  }
+
+  await page.goto(`/catalog?${narrowedQuery}`);
+  await expectNarrowedCatalog(page);
+  await page.locator(".book-card h3 a").first().click();
+  await expect(page).toHaveURL(`${path}?${narrowedQuery}`);
+  await expect(back).toHaveAttribute("href", `/catalog?${narrowedQuery}`);
+  await expect(genre).toHaveAttribute("href", lightNovelCatalog);
+  await page
+    .getByRole("button", {
+      name: `Yêu thích: ${narrowedTitles[0]}`,
+      exact: true,
+    })
+    .focus();
+  await page.keyboard.press("Tab");
+  await expect(genre).toBeFocused();
+  await expect(genre).toHaveCSS("outline-style", "solid");
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          document.documentElement.scrollWidth -
+          document.documentElement.clientWidth,
+      ),
+    )
+    .toBeLessThanOrEqual(0);
+  await page.keyboard.press("Enter");
+  await expectDefaultLightNovelCatalog(page);
+  await page.goBack();
+  await expect(back).toHaveAttribute("href", `/catalog?${narrowedQuery}`);
+  await back.click();
+  await expect(page).toHaveURL(`/catalog?${narrowedQuery}`);
+  await expectNarrowedCatalog(page);
+
+  // A different incoming category must not choose the book's discovery link.
+  await page.goto(`${path}?q=Lam+Kh%C3%AA&category=manga&sort=recent`);
+  await expect(back).toHaveAttribute(
+    "href",
+    "/catalog?q=Lam+Kh%C3%AA&category=manga&sort=recent",
+  );
+  await expect(genre).toHaveAttribute("href", lightNovelCatalog);
+  await page.goto("/products/ban-do-cua-gio?category=light-novel");
+  await expect(
+    page.getByRole("link", {
+      name: "Xem thêm sách thuộc thể loại Manga",
+      exact: true,
+    }),
+  ).toHaveAttribute("href", "/catalog?category=manga");
+});
+
 test.describe("catalog GET navigation without JavaScript", () => {
   test.use({ javaScriptEnabled: false });
+
+  test("product genre discovery opens the category-only catalog", async ({
+    page,
+  }) => {
+    await page.goto(`/products/${narrowedSlugs[0]}?${narrowedQuery}`);
+    await expect(
+      page.getByRole("link", { name: "Trở lại kết quả", exact: true }),
+    ).toHaveAttribute("href", `/catalog?${narrowedQuery}`);
+    await page
+      .getByRole("link", { name: lightNovelGenreLink, exact: true })
+      .click();
+    await expectDefaultLightNovelCatalog(page);
+  });
 
   test("product links return to matching catalog cards", async ({ page }) => {
     await page.goto(`/catalog?${narrowedQuery}`);

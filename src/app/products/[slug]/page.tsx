@@ -35,6 +35,7 @@ export default async function ProductPage({
   const catalogSuffix = catalogFilterSuffix(
     readCatalogFilters(await searchParams, categories),
   );
+  const genre = categories.find(({ id }) => id === book.category);
   const collection = series.find((s) => s.id === book.seriesId);
   const release = releases.find((r) => r.bookId === book.id);
   const related = books.filter(
@@ -68,8 +69,7 @@ export default async function ProductPage({
           </div>
           <div>
             <p className="eyebrow">
-              {categories.find((c) => c.id === book.category)?.label} · TÁC PHẨM
-              HƯ CẤU
+              {genre && `${genre.label} · `}TÁC PHẨM HƯ CẤU
             </p>
             <h1>{book.title}</h1>
             <p className="product-description">{book.description}</p>
@@ -107,6 +107,17 @@ export default async function ProductPage({
               <AddToCart id={book.id} />
               <WishlistButton id={book.id} label={book.title} full />
             </div>
+            {genre && genre.id !== "all" && (
+              <p>
+                <Link
+                  className="text-link"
+                  href={`/catalog${catalogFilterSuffix({ q: "", category: genre.id, sort: "default" })}`}
+                >
+                  Xem thêm sách thuộc thể loại {genre.label}{" "}
+                  <span aria-hidden="true">→</span>
+                </Link>
+              </p>
+            )}
             {collection && (
               <p>
                 <Link className="text-link" href={`/series/${collection.slug}`}>
