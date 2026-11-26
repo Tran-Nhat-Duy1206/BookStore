@@ -740,8 +740,134 @@ test("series index lists every public series in order and supports keyboard disc
   );
 });
 
+const seriesResults = (page: import("@playwright/test").Page) =>
+  page.getByRole("region", { name: "Bộ truyện phù hợp" });
+
+async function expectSeriesMatch(
+  page: import("@playwright/test").Page,
+  index: number,
+) {
+  const { title, slug } = publicSeries[index];
+  const section = seriesResults(page);
+  await expect(section.getByRole("heading", { level: 3 })).toHaveText([title]);
+  await expect(section.getByRole("link")).toHaveAttribute(
+    "href",
+    `/series/${slug}`,
+  );
+}
+
+test("catalog series search preserves submitted filters and separate book counts", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 750 });
+  await page.goto("/catalog");
+  const input = page.getByRole("searchbox", {
+    name: "Tên sách, tác giả hoặc nội dung",
+  });
+  const submit = page.getByRole("button", { name: "Tìm & lọc" });
+  const count = page.locator(".result-line span");
+  await expect(seriesResults(page)).toHaveCount(0);
+  for (const query of [publicSeries[1].title, "tram dung giua nhung vi sao"]) {
+    await input.fill(query);
+    await submit.click();
+    await expectSeriesMatch(page, 1);
+    await expect(count).toHaveText(`0 sách minh họa cho “${query}”`);
+    await expect(page.locator(".catalog-grid")).toHaveCount(0);
+  }
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          document.documentElement.scrollWidth -
+          document.documentElement.clientWidth,
+      ),
+    )
+    .toBeLessThanOrEqual(0);
+  await page.goto(
+    `/catalog?${new URLSearchParams({ q: publicSeries[0].title, sort: "title" })}`,
+  );
+  await page.reload();
+  await expectSeriesMatch(page, 0);
+  await expect(count).toHaveText(
+    `2 sách minh họa cho “${publicSeries[0].title}”`,
+  );
+  await expect(page.locator(".catalog-grid h3 a")).toHaveText([
+    "Những lá thư gửi mùa thu",
+    publicSeries[0].title,
+  ]);
+  await expect(page.locator(".catalog-grid h3 a").nth(0)).toHaveAttribute(
+    "href",
+    /\/products\/nhung-la-thu-gui-mua-thu\?/,
+  );
+  await expect(page.locator(".catalog-grid h3 a").nth(1)).toHaveAttribute(
+    "href",
+    /\/products\/nhung-mua-o-lung-may-hop-tuyen\?/,
+  );
+  await input.fill("unsaved");
+  await expectSeriesMatch(page, 0);
+  const manga = page.locator('.chip-row a[href*="category=manga"]').first();
+  await manga.click();
+  await expect(input).toHaveValue(publicSeries[0].title);
+  await expect(page.locator("#sort")).toHaveValue("title");
+  await expect(page.locator("#category")).toHaveValue("manga");
+  await expect(count).toHaveText(
+    `0 sách minh họa cho “${publicSeries[0].title}”`,
+  );
+  await expectSeriesMatch(page, 0);
+  await page
+    .locator(".chip-row")
+    .getByRole("link", { name: "Tất cả", exact: true })
+    .click();
+  await expect(count).toHaveText(
+    `2 sách minh họa cho “${publicSeries[0].title}”`,
+  );
+  await expect(page.locator("#sort")).toHaveValue("title");
+  await expectSeriesMatch(page, 0);
+  await page.getByRole("link", { name: "Xóa bộ lọc" }).click();
+  await expect(page).toHaveURL("/catalog");
+  await expect(seriesResults(page)).toHaveCount(0);
+  await input.fill("unmatched-series-query");
+  await submit.click();
+  await expect(count).toHaveText(
+    "0 sách minh họa cho “unmatched-series-query”",
+  );
+  await expect(seriesResults(page)).toHaveCount(0);
+  await page.goto("/catalog?q=tram&q=sao");
+  await expect(seriesResults(page)).toHaveCount(0);
+  await page.goto(
+    `/catalog?${new URLSearchParams({ q: publicSeries[1].title })}`,
+  );
+  await expectSeriesMatch(page, 1);
+  await page.getByRole("link", { name: "Trở lại tất cả sách" }).focus();
+  await page.keyboard.press("Tab");
+  const card = seriesResults(page).getByRole("link");
+  await expect(card).toBeFocused();
+  await expect(card).toHaveCSS("outline-style", "solid");
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(`/series/${publicSeries[1].slug}`);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+    publicSeries[1].title,
+  );
+});
+
 test.describe("catalog GET navigation without JavaScript", () => {
   test.use({ javaScriptEnabled: false });
+
+  test("catalog finds a public series and follows its native link", async ({
+    page,
+  }) => {
+    await page.goto("/catalog");
+    await page
+      .getByRole("searchbox", { name: "Tên sách, tác giả hoặc nội dung" })
+      .fill("tram dung giua nhung vi sao");
+    await page.getByRole("button", { name: "Tìm & lọc" }).click();
+    await expectSeriesMatch(page, 1);
+    await seriesResults(page).getByRole("link").click();
+    await expect(page).toHaveURL(`/series/${publicSeries[1].slug}`);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+      publicSeries[1].title,
+    );
+  });
 
   test("homepage series shelf opens the index and its detail links without JavaScript", async ({
     page,
@@ -1048,17 +1174,35 @@ test("reduced motion removes tilt and decorative transform", async ({
 test("essential routes pass automated accessibility checks", async ({
   page,
 }) => {
+  const invalidComparisonURL = `/compare?book=${compareFirst}&with=${compareFirst}`;
+  const seriesSearchURL = "/catalog?q=tram+dung+giua+nhung+vi+sao";
   for (const path of [
     "/",
     "/catalog",
     "/products/khu-vuon-sau-con-mua",
     "/series",
+    seriesSearchURL,
+    comparisonURL,
+    invalidComparisonURL,
     "/news",
     "/releases",
     "/wishlist",
     "/cart",
   ]) {
     await page.goto(path);
+    if (path === seriesSearchURL) {
+      await expectSeriesMatch(page, 1);
+    } else if (path === comparisonURL) {
+      await expectComparison(page);
+    } else if (path === invalidComparisonURL) {
+      await expect(
+        page.getByRole("heading", { name: "Không thể so sánh lựa chọn này" }),
+      ).toBeVisible();
+      await expect(page.getByRole("table")).toHaveCount(0);
+      await expect(
+        page.getByRole("link", { name: "Trở lại kệ sách" }),
+      ).toHaveAttribute("href", "/catalog");
+    }
     const result = await new AxeBuilder({ page })
       .withTags(["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"])
       .analyze();
