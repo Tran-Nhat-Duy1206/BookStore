@@ -1460,8 +1460,10 @@ svg {
     padding-block: 17px;
   }
   .brand {
+    min-width: 0;
     font-size: 23px;
     gap: 9px;
+    white-space: normal;
   }
   .brand small {
     font-size: 6px;
@@ -1475,6 +1477,7 @@ svg {
     display: none;
   }
   .header-actions {
+    flex-shrink: 0;
     gap: 0;
   }
   .mobile-menu {

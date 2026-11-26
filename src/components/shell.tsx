@@ -128,7 +128,7 @@ export function Header() {
                           ))}
                         </nav>
                         <p className="demo-caption">
-                          Thương hiệu tạm thời · Không có địa chỉ cửa hàng
+                          Bản trình diễn · Không có địa chỉ cửa hàng
                         </p>
                       </motion.div>
                     </Dialog.Content>
@@ -194,9 +194,7 @@ export function Footer() {
         </div>
       </div>
       <div className="container footer-bottom">
-        <span>
-          {site.name} là tên tạm thời. Toàn bộ sách và nội dung là hư cấu.
-        </span>
+        <span>{site.name} · Toàn bộ sách và nội dung là hư cấu.</span>
         <span>Được làm với sự trân trọng từng trang sách.</span>
       </div>
     </footer>

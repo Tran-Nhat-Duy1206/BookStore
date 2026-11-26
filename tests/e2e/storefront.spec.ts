@@ -7,6 +7,23 @@ test("homepage, original artwork and responsive layout", async ({
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/");
+  await expect(
+    page
+      .getByRole("banner")
+      .getByRole("link", { name: "Cá Tỏ BookStore — Trang chủ", exact: true }),
+  ).toContainText("Cá Tỏ BookStore");
+  await expect(
+    page
+      .getByRole("contentinfo")
+      .getByRole("link", { name: "Cá Tỏ BookStore", exact: true }),
+  ).toHaveAttribute("href", "/");
+  await expect(page).toHaveTitle(
+    "Cá Tỏ BookStore — Một góc nhỏ, ngàn câu chuyện",
+  );
+  await expect(page.locator('meta[name="description"]')).toHaveAttribute(
+    "content",
+    /^Cá Tỏ BookStore là không gian sách minh họa:/,
+  );
   await expect(page.getByRole("heading", { level: 1 })).toContainText(
     "Có một thế giới",
   );
@@ -47,6 +64,7 @@ test("responsive content pages do not overflow", async ({ page }, testInfo) => {
     "/wishlist",
   ]) {
     await page.goto(path);
+    await expect(page).toHaveTitle(/ \| Cá Tỏ BookStore$/);
     for (const width of [320, 768, 1440]) {
       await page.setViewportSize({ width, height: 900 });
       expect(
