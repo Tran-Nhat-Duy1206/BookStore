@@ -663,6 +663,51 @@ test("series comparison preserves selected books and public metadata", async ({
   ).toHaveText(["Tập 2", "Tập 1"]);
 });
 
+test("product recommendation headings match the exact public books shown", async ({
+  page,
+}) => {
+  for (const [slug, heading, expected] of [
+    [
+      compareFirst,
+      "Trong cùng bộ truyện",
+      [compareSecond, "nhung-mua-o-lung-may-hop-tuyen"],
+    ],
+    ["ban-do-cua-gio", "Có thể bạn sẽ thích", ["dem-trang-tren-mai-nha"]],
+    [
+      "bien-o-phia-trong",
+      "Có thể bạn sẽ thích",
+      [
+        compareFirst,
+        "tiem-tra-cuoi-chan-troi",
+        compareSecond,
+        "nguoi-giu-nhung-vi-sao",
+      ],
+    ],
+  ] as const) {
+    await page.goto(`/products/${slug}`);
+    const shelf = page.locator(".related-section");
+    await expect(shelf.getByRole("heading", { level: 2 })).toHaveText(heading);
+    const links = shelf.locator(".book-card h3 a");
+    await expect(links).toHaveCount(expected.length);
+    for (const [index, relatedSlug] of expected.entries()) {
+      await expect(links.nth(index)).toHaveAttribute(
+        "href",
+        `/products/${relatedSlug}`,
+      );
+    }
+  }
+});
+
+test("an unknown series keeps its HTTP 404", async ({ page }) => {
+  const response = await page.goto("/series/unknown-storefront-series");
+  expect(response?.status()).toBe(404);
+  await expect(
+    page.getByRole("heading", {
+      name: "Chưa có sách công khai trong bộ truyện này",
+    }),
+  ).toHaveCount(0);
+});
+
 test("invalid series comparisons offer a safe recovery without substituting books", async ({
   page,
 }) => {

@@ -43,26 +43,39 @@ export default async function ProductPage({
     value !== "." &&
     value !== ".." &&
     !/[/?#\\\s\u0000-\u001f\u007f]/u.test(value);
-  const comparisonSeries = series.filter((item) =>
-    item.bookIds.includes(book.id),
-  );
+  const publicSeries = series.filter((item) => item.bookIds.includes(book.id));
   const comparisonBooks = canCompareSlug(book.slug)
     ? books.filter(
         (candidate) =>
           candidate.id !== book.id &&
           candidate.slug !== book.slug &&
           canCompareSlug(candidate.slug) &&
-          comparisonSeries.some((item) => item.bookIds.includes(candidate.id)),
+          publicSeries.some((item) => item.bookIds.includes(candidate.id)),
       )
     : [];
   const release = releases.find((r) => r.bookId === book.id);
-  const related = books.filter(
-    (b) =>
-      b.id !== book.id &&
-      (collection
-        ? collection.bookIds.includes(b.id)
-        : b.category === book.category),
+  const seenIds = new Set([book.id]);
+  const seenSlugs = new Set([book.slug]);
+  const alternatives = books.filter((candidate) => {
+    if (
+      !canCompareSlug(candidate.slug) ||
+      seenIds.has(candidate.id) ||
+      seenSlugs.has(candidate.slug)
+    )
+      return false;
+    seenIds.add(candidate.id);
+    seenSlugs.add(candidate.slug);
+    return true;
+  });
+  const sameSeries = alternatives.filter((candidate) =>
+    publicSeries.some((item) => item.bookIds.includes(candidate.id)),
   );
+  const sameGenre = alternatives.filter(
+    (candidate) => candidate.category === book.category,
+  );
+  const related = (
+    sameSeries.length ? sameSeries : sameGenre.length ? sameGenre : alternatives
+  ).slice(0, 4);
   return (
     <div className="container">
       <div className="page-heading">
@@ -184,21 +197,20 @@ export default async function ProductPage({
             )}
           </div>
         </div>
-        <section className="related-section">
-          <SectionHeading
-            kicker="ĐỌC TIẾP MỘT CHÚT NỮA"
-            title={
-              collection ? "Trong cùng bộ truyện" : "Một vài câu chuyện gần bên"
-            }
-            href="/catalog"
-          />
-          <BookGrid
-            items={(related.length
-              ? related
-              : books.filter((b) => b.id !== book.id)
-            ).slice(0, 4)}
-          />
-        </section>
+        {related.length > 0 && (
+          <section className="related-section">
+            <SectionHeading
+              kicker="ĐỌC TIẾP MỘT CHÚT NỮA"
+              title={
+                sameSeries.length
+                  ? "Trong cùng bộ truyện"
+                  : "Có thể bạn sẽ thích"
+              }
+              href="/catalog"
+            />
+            <BookGrid items={related} />
+          </section>
+        )}
       </div>
     </div>
   );
