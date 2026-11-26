@@ -551,8 +551,151 @@ test("product genre browsing stays distinct from the original search", async ({
   ).toHaveAttribute("href", "/catalog?category=manga");
 });
 
+const compareFirst = "khu-vuon-sau-con-mua";
+const compareSecond = "nhung-la-thu-gui-mua-thu";
+const comparisonURL = `/compare?book=${compareFirst}&with=${compareSecond}`;
+
+async function expectComparison(page: import("@playwright/test").Page) {
+  const table = page.getByRole("table", { name: "Thông tin hai cuốn sách" });
+  await expect(table.getByRole("columnheader")).toHaveText([
+    "Thông tin",
+    "Khu vườn sau cơn mưa",
+    "Những lá thư gửi mùa thu",
+  ]);
+  for (const [label, left, right] of [
+    ["Tập / nội dung", "Tập 1", "Tập 2"],
+    ["Ấn bản minh họa", "Bản minh họa hư cấu", "Bản tiêu chuẩn minh họa"],
+    ["Ngôn ngữ", "Tiếng Việt", "Tiếng Việt"],
+    ["Năm xuất bản (minh họa)", "2027", "2027"],
+  ]) {
+    await expect(
+      table
+        .getByRole("row")
+        .filter({
+          has: page.getByRole("rowheader", { name: label, exact: true }),
+        })
+        .getByRole("cell"),
+    ).toHaveText([left, right]);
+  }
+}
+
+test("series comparison preserves selected books and public metadata", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 750 });
+  await page.goto(`/products/${compareFirst}`);
+  const select = page.getByLabel("Chọn sách cùng bộ để so sánh", {
+    exact: true,
+  });
+  await expect(select.locator("option")).toHaveText([
+    "Chọn một cuốn sách",
+    "Những lá thư gửi mùa thu",
+    "Những mùa ở Lũng Mây",
+  ]);
+  await expect(select).toHaveValue("");
+  await select.selectOption(compareSecond);
+  await select.focus();
+  await page.keyboard.press("Tab");
+  const submit = page.getByRole("button", {
+    name: "So sánh sách",
+    exact: true,
+  });
+  await expect(submit).toBeFocused();
+  await expect(submit).toHaveCSS("outline-style", "solid");
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(comparisonURL);
+  await expectComparison(page);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          document.documentElement.scrollWidth -
+          document.documentElement.clientWidth,
+      ),
+    )
+    .toBeLessThanOrEqual(0);
+  await page.reload();
+  await expectComparison(page);
+  const table = page.getByRole("table");
+  for (const [title, slug] of [
+    ["Khu vườn sau cơn mưa", compareFirst],
+    ["Những lá thư gửi mùa thu", compareSecond],
+  ]) {
+    await expect(
+      table.getByRole("link", { name: title, exact: true }),
+    ).toHaveAttribute("href", `/products/${slug}`);
+  }
+  await table
+    .getByRole("link", { name: "Những lá thư gửi mùa thu", exact: true })
+    .click();
+  await expect(page).toHaveURL(`/products/${compareSecond}`);
+  await page.goto(
+    `/compare?book=${compareSecond}&with=${compareFirst}&series=untrusted`,
+  );
+  await expect(table.getByRole("columnheader")).toHaveText([
+    "Thông tin",
+    "Những lá thư gửi mùa thu",
+    "Khu vườn sau cơn mưa",
+  ]);
+  await expect(
+    table
+      .getByRole("row")
+      .filter({ has: page.getByRole("rowheader", { name: "Tập / nội dung" }) })
+      .getByRole("cell"),
+  ).toHaveText(["Tập 2", "Tập 1"]);
+});
+
+test("invalid series comparisons offer a safe recovery without substituting books", async ({
+  page,
+}) => {
+  await page.goto("/products/ban-do-cua-gio");
+  await expect(
+    page.getByRole("button", { name: "So sánh sách", exact: true }),
+  ).toHaveCount(0);
+  for (const query of [
+    `book=${compareFirst}`,
+    `book=${compareFirst}&book=${compareFirst}&with=${compareSecond}`,
+    `book=${compareFirst}&with=${compareSecond}&with=${compareSecond}`,
+    `book=${compareFirst}&with=${compareFirst}`,
+    `book=${compareFirst}&with=unknown-book`,
+    `book=${compareFirst}&with=nguoi-giu-nhung-vi-sao&series=nhung-mua-o-lung-may`,
+    `book=${compareFirst}&with=ban-do-cua-gio`,
+    `book=${compareFirst}&with=https%3A%2F%2Fevil.example&returnTo=%2F%2Fevil.example`,
+    `book=${compareFirst}&with=%00${compareSecond}`,
+  ]) {
+    await test.step(query, async () => {
+      await page.goto(`/compare?${query}`);
+      await expect(
+        page.getByRole("heading", { name: "Không thể so sánh lựa chọn này" }),
+      ).toBeVisible();
+      await expect(page.getByRole("table")).toHaveCount(0);
+      await expect(
+        page.getByRole("link", { name: "Trở lại kệ sách", exact: true }),
+      ).toHaveAttribute("href", "/catalog");
+    });
+  }
+  await page
+    .getByRole("link", { name: "Trở lại kệ sách", exact: true })
+    .click();
+  await expect(page).toHaveURL("/catalog");
+});
+
 test.describe("catalog GET navigation without JavaScript", () => {
   test.use({ javaScriptEnabled: false });
+
+  test("series comparison submits a native GET without JavaScript", async ({
+    page,
+  }) => {
+    await page.goto(`/products/${compareFirst}`);
+    await page
+      .getByLabel("Chọn sách cùng bộ để so sánh", { exact: true })
+      .selectOption(compareSecond);
+    await page
+      .getByRole("button", { name: "So sánh sách", exact: true })
+      .click();
+    await expect(page).toHaveURL(comparisonURL);
+    await expectComparison(page);
+  });
 
   test("product genre discovery opens the category-only catalog", async ({
     page,

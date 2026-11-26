@@ -37,6 +37,24 @@ export default async function ProductPage({
   );
   const genre = categories.find(({ id }) => id === book.category);
   const collection = series.find((s) => s.id === book.seriesId);
+  // Match /compare's path-segment rules as well as public series membership.
+  const canCompareSlug = (value: string) =>
+    value.length > 0 &&
+    value !== "." &&
+    value !== ".." &&
+    !/[/?#\\\s\u0000-\u001f\u007f]/u.test(value);
+  const comparisonSeries = series.filter((item) =>
+    item.bookIds.includes(book.id),
+  );
+  const comparisonBooks = canCompareSlug(book.slug)
+    ? books.filter(
+        (candidate) =>
+          candidate.id !== book.id &&
+          candidate.slug !== book.slug &&
+          canCompareSlug(candidate.slug) &&
+          comparisonSeries.some((item) => item.bookIds.includes(candidate.id)),
+      )
+    : [];
   const release = releases.find((r) => r.bookId === book.id);
   const related = books.filter(
     (b) =>
@@ -133,6 +151,36 @@ export default async function ProductPage({
                   Đọc ghi chú lịch phát hành mẫu →
                 </Link>
               </div>
+            )}
+            {comparisonBooks.length > 0 && (
+              <form action="/compare" method="get" className="notice">
+                <input type="hidden" name="book" value={book.slug} />
+                <div className="field">
+                  <label htmlFor="compare-with">
+                    Chọn sách cùng bộ để so sánh
+                  </label>
+                  <select
+                    id="compare-with"
+                    name="with"
+                    defaultValue=""
+                    required
+                  >
+                    <option value="" disabled>
+                      Chọn một cuốn sách
+                    </option>
+                    {comparisonBooks.map((candidate) => (
+                      <option key={candidate.id} value={candidate.slug}>
+                        {candidate.title}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <p>
+                  <button className="button button-secondary" type="submit">
+                    So sánh sách
+                  </button>
+                </p>
+              </form>
             )}
           </div>
         </div>
