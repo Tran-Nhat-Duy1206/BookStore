@@ -1,38 +1,27 @@
 import Link from "next/link";
 import { Search, ArrowRight } from "lucide-react";
 import { readCatalog } from "@/modules/catalog/read-catalog";
+import {
+  catalogFilterSuffix,
+  readCatalogFilters,
+  type FilterParams,
+} from "@/modules/catalog/filter-url";
 import { discoverBooks } from "@/modules/catalog/search";
 import { BookGrid } from "@/components/cards";
 export const metadata = { title: "Kệ sách minh họa" };
-type Params = Record<string, string | string[] | undefined>;
 export default async function Catalog({
   searchParams,
 }: {
-  searchParams: Promise<Params>;
+  searchParams: Promise<FilterParams>;
 }) {
   const { books, categories } = await readCatalog();
-  const params = await searchParams;
-  const q = typeof params.q === "string" ? params.q : "";
-  const requestedCategory =
-    typeof params.category === "string" ? params.category.trim() : "all";
-  const category = categories.some((item) => item.id === requestedCategory)
-    ? requestedCategory
-    : "all";
-  const requestedSort =
-    typeof params.sort === "string" ? params.sort.trim() : "default";
-  const sort = ["default", "title", "recent"].includes(requestedSort)
-    ? requestedSort
-    : "default";
+  const filters = readCatalogFilters(await searchParams, categories);
+  const { q, category, sort } = filters;
   const items = discoverBooks(books, { query: q, category, sort });
 
   // Category links use the submitted URL state, not unsaved form edits.
   function categoryHref(nextCategory: string) {
-    const filters = new URLSearchParams();
-    if (q) filters.set("q", q);
-    if (nextCategory !== "all") filters.set("category", nextCategory);
-    if (sort !== "default") filters.set("sort", sort);
-    const query = filters.toString();
-    return query ? `/catalog?${query}` : "/catalog";
+    return `/catalog${catalogFilterSuffix({ ...filters, category: nextCategory })}`;
   }
 
   return (
@@ -122,7 +111,7 @@ export default async function Catalog({
         </div>
         {items.length ? (
           <div className="catalog-grid">
-            <BookGrid items={items} />
+            <BookGrid items={items} catalogFilters={filters} />
           </div>
         ) : (
           <div className="empty-state">

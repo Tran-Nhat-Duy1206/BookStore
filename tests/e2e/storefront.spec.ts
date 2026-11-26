@@ -272,8 +272,192 @@ test("category links retain submitted filters through navigation and history", a
   await expect(cards).toHaveCount(12);
 });
 
+const narrowedTitles = ["Người giữ những vì sao", "Tiệm trà cuối chân trời"];
+const narrowedSlugs = ["nguoi-giu-nhung-vi-sao", "tiem-tra-cuoi-chan-troi"];
+const narrowedFilters = {
+  q: "Lam Khê",
+  category: "light-novel",
+  sort: "title",
+};
+const narrowedQuery = new URLSearchParams(narrowedFilters).toString();
+
+async function expectNarrowedCatalog(page: import("@playwright/test").Page) {
+  await expect(page.locator(".book-card h3")).toHaveText(narrowedTitles);
+  await expect(page.locator(".result-line span")).toHaveText(
+    "2 sách minh họa cho “Lam Khê”",
+  );
+  for (const [index, slug] of narrowedSlugs.entries()) {
+    const card = page.locator(".book-card").nth(index);
+    const href = `/products/${slug}?${narrowedQuery}`;
+    await expect(card.locator(".cover-link")).toHaveAttribute("href", href);
+    await expect(card.locator("h3 a")).toHaveAttribute("href", href);
+  }
+}
+
+test("product return restores narrowed results in a new tab after reload", async ({
+  page,
+  context,
+  isMobile,
+}) => {
+  await page.goto("/catalog");
+  await expect(page.locator(".book-card")).toHaveCount(12);
+  const firstCard = page.locator(".book-card").first();
+  for (const selector of [".cover-link", "h3 a"]) {
+    await expect(firstCard.locator(selector)).toHaveAttribute(
+      "href",
+      "/products/khu-vuon-sau-con-mua",
+    );
+  }
+  const query = page.getByLabel("Tên sách, tác giả hoặc nội dung");
+  await query.fill(narrowedFilters.q);
+  await page
+    .getByLabel("Thể loại", { exact: true })
+    .selectOption("light-novel");
+  await page.getByLabel("Sắp xếp", { exact: true }).selectOption("title");
+  await page.getByRole("button", { name: "Tìm & lọc" }).click();
+  await expectNarrowedCatalog(page);
+  await query.fill("bản nháp không được chuyển tiếp");
+  const titleLink = page.locator(".book-card h3 a").first();
+  let product;
+  if (isMobile) {
+    // Open the emitted URL in a fresh tab without relying on browser history.
+    const href = await titleLink.getAttribute("href");
+    expect(href).not.toBeNull();
+    product = await context.newPage();
+    await product.goto(new URL(href!, page.url()).href);
+  } else {
+    const opened = context.waitForEvent("page");
+    await titleLink.click({ button: "middle" });
+    product = await opened;
+  }
+  await expect(product.getByRole("heading", { level: 1 })).toHaveText(
+    narrowedTitles[0],
+  );
+  const returnLink = product.getByRole("link", {
+    name: "Trở lại kết quả",
+    exact: true,
+  });
+  await expect(returnLink).toHaveAttribute("href", `/catalog?${narrowedQuery}`);
+  await product.reload();
+  await expect(returnLink).toHaveAttribute("href", `/catalog?${narrowedQuery}`);
+  await expect(
+    product.locator(".related-section .book-card h3 a").first(),
+  ).toHaveAttribute("href", "/products/tiem-tra-cuoi-chan-troi");
+  await product
+    .locator(".breadcrumb")
+    .getByRole("link", { name: "Trang chủ" })
+    .focus();
+  await product.keyboard.press("Tab");
+  await expect(returnLink).toBeFocused();
+  await expect(returnLink).toHaveCSS("outline-style", "solid");
+  await expect
+    .poll(() =>
+      product.evaluate(
+        () =>
+          document.documentElement.scrollWidth -
+          document.documentElement.clientWidth,
+      ),
+    )
+    .toBeLessThanOrEqual(0);
+  await product.keyboard.press("Enter");
+  await expect(product).toHaveURL(`/catalog?${narrowedQuery}`);
+  await expect(
+    product.getByLabel("Tên sách, tác giả hoặc nội dung"),
+  ).toHaveValue(narrowedFilters.q);
+  await expect(product.getByLabel("Thể loại", { exact: true })).toHaveValue(
+    "light-novel",
+  );
+  await expect(product.getByLabel("Sắp xếp", { exact: true })).toHaveValue(
+    "title",
+  );
+  await expectNarrowedCatalog(product);
+});
+
+test("product accepts only catalog fields and keeps metadata and 404 behavior", async ({
+  page,
+}) => {
+  const path = "/products/nguoi-giu-nhung-vi-sao";
+  await page.goto("/");
+  await expect(page.locator(".book-card h3 a").first()).toHaveAttribute(
+    "href",
+    /^\/products\/[^?]+$/,
+  );
+  await page.goto(path);
+  const title = await page.title();
+  expect(title).toContain(narrowedTitles[0]);
+  const canonical = await page
+    .locator('link[rel="canonical"]')
+    .evaluateAll((links) => links.map((link) => link.getAttribute("href")));
+  const returnLink = page.getByRole("link", {
+    name: "Trở lại kết quả",
+    exact: true,
+  });
+  const fallback = page
+    .locator(".breadcrumb")
+    .getByRole("link", { name: "Kệ sách" });
+  await expect(returnLink).toHaveCount(0);
+  await expect(fallback).toHaveAttribute("href", "/catalog");
+  await page.goto(
+    `${path}?q=a&q=b&category=manga&category=light-novel&sort=title&sort=recent&returnTo=%2F%2Fevil.example`,
+  );
+  await expect(returnLink).toHaveCount(0);
+  await expect(fallback).toHaveAttribute("href", "/catalog");
+  await page.goto(
+    `${path}?category=%2F%2Fevil.example&sort=unlisted&returnTo=https%3A%2F%2Fevil.example`,
+  );
+  await expect(returnLink).toHaveCount(0);
+  await expect(fallback).toHaveAttribute("href", "/catalog");
+
+  await page.goto(`${path}?q=a&q=b&sort=title&returnTo=%2F%2Fevil.example`);
+  await expect(returnLink).toHaveAttribute("href", "/catalog?sort=title");
+
+  const q = "Tiếng Việt & + # % ? //evil.example";
+  const input = new URLSearchParams({
+    q,
+    category: " light-novel ",
+    sort: " recent ",
+    returnTo: "//evil.example",
+  });
+  await page.goto(`${path}?${input}`);
+  const expected = new URLSearchParams({
+    q,
+    category: "light-novel",
+    sort: "recent",
+  });
+  await expect(returnLink).toHaveAttribute("href", `/catalog?${expected}`);
+  await expect(page).toHaveTitle(title);
+  expect(
+    await page
+      .locator('link[rel="canonical"]')
+      .evaluateAll((links) => links.map((link) => link.getAttribute("href"))),
+  ).toEqual(canonical);
+  await returnLink.click();
+  await expect(page).toHaveURL(`/catalog?${expected}`);
+  await expect(page.getByLabel("Tên sách, tác giả hoặc nội dung")).toHaveValue(
+    q,
+  );
+  const missing = await page.goto(`/products/not-a-real-book?${expected}`);
+  expect(missing?.status()).toBe(404);
+});
+
 test.describe("catalog GET navigation without JavaScript", () => {
   test.use({ javaScriptEnabled: false });
+
+  test("product links return to matching catalog cards", async ({ page }) => {
+    await page.goto(`/catalog?${narrowedQuery}`);
+    await expectNarrowedCatalog(page);
+    await page
+      .getByRole("link", { name: `Xem ${narrowedTitles[0]}`, exact: true })
+      .click();
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+      narrowedTitles[0],
+    );
+    await page
+      .getByRole("link", { name: "Trở lại kết quả", exact: true })
+      .click();
+    await expect(page).toHaveURL(`/catalog?${narrowedQuery}`);
+    await expectNarrowedCatalog(page);
+  });
 
   test("encoded search stays intact in category links and empty results", async ({
     page,

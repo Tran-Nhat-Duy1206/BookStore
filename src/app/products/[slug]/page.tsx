@@ -1,6 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { readCatalog } from "@/modules/catalog/read-catalog";
+import {
+  catalogFilterSuffix,
+  readCatalogFilters,
+  type FilterParams,
+} from "@/modules/catalog/filter-url";
 import { releases } from "@/modules/editorial/data";
 import { BookCover } from "@/components/book-cover";
 import { BookTilt } from "@/components/motion";
@@ -18,13 +23,18 @@ export async function generateMetadata({
 }
 export default async function ProductPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string }>;
+  searchParams: Promise<FilterParams>;
 }) {
   const { books, categories, series } = await readCatalog();
   const { slug } = await params;
   const book = books.find((b) => b.slug === slug);
   if (!book) notFound();
+  const catalogSuffix = catalogFilterSuffix(
+    readCatalogFilters(await searchParams, categories),
+  );
   const collection = series.find((s) => s.id === book.seriesId);
   const release = releases.find((r) => r.bookId === book.id);
   const related = books.filter(
@@ -40,7 +50,11 @@ export default async function ProductPage({
         <div className="breadcrumb">
           <Link href="/">Trang chủ</Link>
           <span>/</span>
-          <Link href="/catalog">Kệ sách</Link>
+          {catalogSuffix ? (
+            <Link href={`/catalog${catalogSuffix}`}>Trở lại kết quả</Link>
+          ) : (
+            <Link href="/catalog">Kệ sách</Link>
+          )}
           <span>/</span>
           <span>{book.title}</span>
         </div>
