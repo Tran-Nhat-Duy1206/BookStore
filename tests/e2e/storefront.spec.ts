@@ -901,11 +901,38 @@ test("catalog series search preserves submitted filters and separate book counts
     `/catalog?${new URLSearchParams({ q: publicSeries[1].title })}`,
   );
   await expectSeriesMatch(page, 1);
-  await page.getByRole("link", { name: "Trở lại tất cả sách" }).focus();
-  await page.keyboard.press("Tab");
+  const recovery = page.getByRole("link", { name: "Trở lại tất cả sách" });
   const card = seriesResults(page).getByRole("link");
+  for (const width of [320, 375]) {
+    await page.setViewportSize({ width, height: 750 });
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBeLessThanOrEqual(width);
+    expect((await card.boundingBox())!.y).toBeLessThan(
+      (await recovery.boundingBox())!.y,
+    );
+    expect(
+      await card.evaluate((link) =>
+        Boolean(
+          link.compareDocumentPosition(
+            document.querySelector(".empty-state a")!,
+          ) & Node.DOCUMENT_POSITION_FOLLOWING,
+        ),
+      ),
+    ).toBe(true);
+    await page.screenshot({
+      path: `test-results/mobile-accessibility/catalog-${page.context().browser()?.browserType().name()}-${width}-${test.info().project.name}.png`,
+      fullPage: true,
+    });
+  }
+  await page.getByRole("link", { name: "Xóa bộ lọc" }).focus();
+  await page.keyboard.press("Tab");
   await expect(card).toBeFocused();
   await expect(card).toHaveCSS("outline-style", "solid");
+  await page.keyboard.press("Tab");
+  await expect(recovery).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(card).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(`/series/${publicSeries[1].slug}`);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(
@@ -913,8 +940,103 @@ test("catalog series search preserves submitted filters and separate book counts
   );
 });
 
+test("catalog search controls align while the visible hint stays associated", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/catalog?q=tram+dung+giua+nhung+vi+sao");
+  const form = page.locator(".filter-bar");
+  await expect(form.getByRole("searchbox")).toHaveAccessibleDescription(
+    "Bạn cũng có thể tìm tên bộ truyện.",
+  );
+  await expect(
+    form.getByText("Bạn cũng có thể tìm tên bộ truyện."),
+  ).toBeVisible();
+  const controls = await form
+    .locator("input, select, button[type=submit]")
+    .evaluateAll((els) => els.map((el) => el.getBoundingClientRect().top));
+  expect(controls).toHaveLength(4);
+  expect(Math.max(...controls) - Math.min(...controls)).toBeLessThanOrEqual(1);
+  await page.screenshot({
+    path: `test-results/mobile-accessibility/catalog-wide-${test.info().project.name}.png`,
+    fullPage: true,
+  });
+});
+
+const filteredProductQuery = "q=khu+vuon&category=van-hoc&sort=title";
+
+test("storefront breadcrumbs name the current page and preserve keyboard destinations", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 750 });
+  for (const [path, current, destinations] of [
+    ["/catalog", "Kệ sách", ["/"]],
+    [
+      `/products/khu-vuon-sau-con-mua?${filteredProductQuery}`,
+      "Khu vườn sau cơn mưa",
+      ["/", `/catalog?${filteredProductQuery}`],
+    ],
+    ["/series/nhung-mua-o-lung-may", "Những mùa ở Lũng Mây", ["/", "/catalog"]],
+  ] as const) {
+    await page.goto(path);
+    const crumb = page.getByRole("navigation", {
+      name: "Đường dẫn",
+      exact: true,
+    });
+    await expect(crumb.locator('[aria-current="page"]')).toHaveText(current);
+    const links = crumb.getByRole("link");
+    await expect(links).toHaveCount(destinations.length);
+    await expect(crumb.locator('span[aria-hidden="true"]')).toHaveText(
+      destinations.map(() => "/"),
+    );
+    for (const [index, href] of destinations.entries())
+      await expect(links.nth(index)).toHaveAttribute("href", href);
+    await links.first().focus();
+    if (destinations.length > 1) await page.keyboard.press("Tab");
+    else {
+      await page.keyboard.press("Tab");
+      await page.keyboard.press("Shift+Tab");
+    }
+    await expect(links.last()).toBeFocused();
+    await expect(links.last()).toHaveCSS("outline-style", "solid");
+    await page.keyboard.press("Enter");
+    await expect(page).toHaveURL(destinations.at(-1)!);
+  }
+});
+
 test.describe("catalog GET navigation without JavaScript", () => {
   test.use({ javaScriptEnabled: false });
+
+  test("demo collections explain the JavaScript requirement and offer a catalog link", async ({
+    page,
+  }) => {
+    for (const mode of ["cart", "wishlist"]) {
+      await page.goto(`/${mode}`);
+      await expect(
+        page.getByText("Cần JavaScript để xem bộ sưu tập trên thiết bị."),
+      ).toBeVisible();
+      await expect(
+        page.getByText("Đang đọc bộ sưu tập trên thiết bị này…"),
+      ).toBeHidden();
+      await page
+        .getByRole("main")
+        .getByRole("link", { name: "Khám phá kệ sách" })
+        .click();
+      await expect(page).toHaveURL("/catalog");
+    }
+  });
+
+  test("product breadcrumb returns to the submitted catalog without JavaScript", async ({
+    page,
+  }) => {
+    await page.goto(`/products/khu-vuon-sau-con-mua?${filteredProductQuery}`);
+    await page
+      .getByRole("navigation", { name: "Đường dẫn", exact: true })
+      .getByRole("link", { name: "Trở lại kết quả" })
+      .click();
+    await expect(page).toHaveURL(`/catalog?${filteredProductQuery}`);
+    await expect(page.locator("#catalog-query")).toHaveValue("khu vuon");
+  });
 
   test("catalog finds a public series and follows its native link", async ({
     page,
@@ -1234,6 +1356,144 @@ test("reduced motion removes tilt and decorative transform", async ({
   ).toBe("0s");
 });
 
+for (const mode of ["cart", "wishlist"] as const) {
+  test(`${mode} waits for stored data and restores deletion focus`, async ({
+    page,
+  }) => {
+    const key = "bookstore-demo-v1";
+    const ids = [
+      "khu-vuon-sau-con-mua",
+      "tiem-tra-cuoi-chan-troi",
+      "nhung-la-thu-gui-mua-thu",
+    ];
+    const titles = [
+      "Khu vườn sau cơn mưa",
+      "Tiệm trà cuối chân trời",
+      "Những lá thư gửi mùa thu",
+    ];
+    await page.addInitScript(
+      ({ key, mode, ids }) => {
+        if (localStorage.getItem(key) !== null) return;
+        localStorage.setItem(
+          key,
+          JSON.stringify({
+            wishlist: mode === "wishlist" ? ids : [],
+            cart:
+              mode === "cart"
+                ? Object.fromEntries(ids.map((id) => [id, 1]))
+                : {},
+          }),
+        );
+      },
+      { key, mode, ids },
+    );
+    let releaseScripts!: () => void;
+    const scripts = new Promise<void>((resolve) => {
+      releaseScripts = resolve;
+    });
+    await page.route("**/_next/static/**/*.js", async (route) => {
+      await scripts;
+      await route.continue();
+    });
+    const empty = page.getByRole("heading", {
+      name:
+        mode === "cart"
+          ? "Giỏ sách còn một khoảng trống"
+          : "Cuốn sách yêu thích đầu tiên đang chờ bạn",
+    });
+    const rows = page.locator(".collection-row");
+    const pending = page
+      .getByRole("status")
+      .filter({ hasText: "Đang đọc bộ sưu tập trên thiết bị này" });
+    try {
+      await page.goto(`/${mode}`, { waitUntil: "commit" });
+      await expect(pending).toBeVisible();
+      await expect(empty).toHaveCount(0);
+      await page.evaluate(
+        (name) => {
+          const history: string[] = [];
+          Object.assign(window, { collectionStateHistory: history });
+          new MutationObserver(() => {
+            if (
+              [...document.querySelectorAll("main h2")].some(
+                (h) => h.textContent === name,
+              )
+            )
+              history.push("empty");
+          }).observe(document.querySelector("main")!, {
+            childList: true,
+            subtree: true,
+          });
+        },
+        mode === "cart"
+          ? "Giỏ sách còn một khoảng trống"
+          : "Cuốn sách yêu thích đầu tiên đang chờ bạn",
+      );
+    } finally {
+      releaseScripts();
+    }
+    await expect(rows.getByRole("heading")).toHaveText(titles);
+    await expect(pending).toHaveCount(0);
+    expect(
+      await page.evaluate(() => Reflect.get(window, "collectionStateHistory")),
+    ).toEqual([]);
+    expect(
+      await page.evaluate(() => document.activeElement === document.body),
+    ).toBe(true);
+    await page.reload();
+    await expect(rows.getByRole("heading")).toHaveText(titles);
+    expect(
+      await page.evaluate(() => document.activeElement === document.body),
+    ).toBe(true);
+    await expect(
+      page.getByText(
+        mode === "cart"
+          ? /không giữ hàng, không tính tiền và không tạo đơn/
+          : /Không đồng bộ tài khoản/,
+      ),
+    ).toBeVisible();
+    await expectAxe(page, `populated ${mode}`);
+    const remove = (index: number) =>
+      rows.getByRole("button", {
+        name:
+          mode === "cart"
+            ? `Xóa ${titles[index]}`
+            : `Bỏ yêu thích: ${titles[index]}`,
+        exact: true,
+      });
+    await remove(1).focus();
+    await page.keyboard.press("Enter");
+    await expect(remove(2)).toBeFocused();
+    await expect(remove(2)).toHaveCSS("outline-style", "solid");
+    await expect(page.locator(".collection-announcement")).toContainText(
+      titles[1],
+    );
+    await page.keyboard.press("Enter");
+    await expect(remove(0)).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(empty).toBeVisible();
+    const recover = page
+      .locator("main .empty-state")
+      .getByRole("link", { name: "Khám phá kệ sách" });
+    await expect(recover).toBeFocused();
+    await expect(recover).toHaveAttribute("href", "/catalog");
+    expect(
+      await page.evaluate((key) => JSON.parse(localStorage.getItem(key)!), key),
+    ).toEqual({ wishlist: [], cart: {} });
+    await expectAxe(page, `empty ${mode} after deletion`);
+  });
+}
+
+async function expectAxe(page: import("@playwright/test").Page, label: string) {
+  const result = await new AxeBuilder({ page })
+    .withTags(["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"])
+    .analyze();
+  expect(
+    result.violations,
+    `${label}: ${JSON.stringify(result.violations.map((v) => ({ id: v.id, nodes: v.nodes.map((n) => n.target) })))}`,
+  ).toEqual([]);
+}
+
 test("essential routes pass automated accessibility checks", async ({
   page,
 }) => {
@@ -1244,6 +1504,7 @@ test("essential routes pass automated accessibility checks", async ({
     "/catalog",
     "/products/khu-vuon-sau-con-mua",
     "/series",
+    "/series/nhung-mua-o-lung-may",
     seriesSearchURL,
     comparisonURL,
     invalidComparisonURL,
@@ -1266,13 +1527,20 @@ test("essential routes pass automated accessibility checks", async ({
         page.getByRole("link", { name: "Trở lại kệ sách" }),
       ).toHaveAttribute("href", "/catalog");
     }
-    const result = await new AxeBuilder({ page })
-      .withTags(["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"])
-      .analyze();
-    expect(
-      result.violations,
-      `${path}: ${JSON.stringify(result.violations.map((v) => ({ id: v.id, nodes: v.nodes.map((n) => n.target) })))}`,
-    ).toEqual([]);
+    if (
+      path.startsWith("/catalog") ||
+      path.startsWith("/products/") ||
+      path.startsWith("/series")
+    ) {
+      await expect(
+        page
+          .getByRole("navigation", { name: "Đường dẫn", exact: true })
+          .locator('[aria-current="page"]'),
+      ).toBeVisible();
+    }
+    if (path === "/cart" || path === "/wishlist")
+      await expect(page.locator("main .empty-state")).toBeVisible();
+    await expectAxe(page, path);
   }
 });
 

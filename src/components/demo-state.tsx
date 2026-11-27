@@ -85,6 +85,7 @@ function update(value: Snapshot) {
 const DemoContext = createContext<{
   books: Book[];
   state: Snapshot;
+  initialized: boolean;
   toggle: (id: string) => void;
   add: (id: string) => void;
   quantity: (id: string, count: number) => void;
@@ -100,11 +101,12 @@ export function DemoProvider({
     (callback: () => void) => subscribe(callback, books),
     [books],
   );
-  const state = useSyncExternalStore(
+  const snapshot = useSyncExternalStore(
     subscribeToCatalog,
-    () => current,
-    () => empty,
+    () => (loaded ? current : null),
+    () => null,
   );
+  const state = snapshot ?? empty;
   const [feedback, setFeedback] = useState({ text: "", sequence: 0 });
   const feedbackRoot = useRef<HTMLDivElement>(null);
   const feedbackTrigger = useRef<HTMLElement | null>(null);
@@ -155,6 +157,7 @@ export function DemoProvider({
       value={{
         books,
         state,
+        initialized: snapshot !== null,
         toggle(id) {
           const book = books.find((b) => b.id === id);
           if (!book) return;
@@ -276,23 +279,56 @@ export function AddToCart({ id }: { id: string }) {
   );
 }
 export function DemoCollection({ mode }: { mode: "wishlist" | "cart" }) {
-  const { books, state, quantity } = useDemo();
+  const { books, state, quantity, initialized } = useDemo();
   const root = useRef<HTMLDivElement>(null);
+  const [removalAnnouncement, setRemovalAnnouncement] = useState({
+    text: "",
+    sequence: 0,
+  });
   const selected = books.filter((b) =>
     mode === "wishlist"
       ? state.wishlist.includes(b.id)
       : Boolean(state.cart[b.id]),
   );
-  function restoreFocus() {
+  function restoreFocus(id: string) {
+    const index = selected.findIndex((book) => book.id === id);
+    const trigger = document.activeElement;
     requestAnimationFrame(() => {
-      root.current
-        ?.querySelector<HTMLElement>(".collection-row button, .empty-state a")
-        ?.focus();
+      if (!root.current || index < 0) return;
+      // Don't steal focus if the user has already moved to another control.
+      if (
+        document.activeElement !== document.body &&
+        document.activeElement !== trigger
+      )
+        return;
+      const rows = [
+        ...root.current.querySelectorAll<HTMLElement>("[data-collection-id]"),
+      ];
+      if (rows.some((row) => row.dataset.collectionId === id)) return;
+      const row = rows[Math.min(index, rows.length - 1)];
+      const target = row
+        ? row.querySelector<HTMLElement>(
+            mode === "cart"
+              ? "[data-collection-remove]"
+              : 'button[aria-pressed="true"]',
+          )
+        : root.current.querySelector<HTMLElement>(".empty-state a");
+      if (!target) return;
+      target.focus();
+      // The floating toast dismisses on focus change; retain a local announcement.
+      const title = selected[index].title;
+      setRemovalAnnouncement((previous) => ({
+        text:
+          mode === "cart"
+            ? `Đã xóa ${title} khỏi giỏ thử nghiệm.`
+            : `Đã bỏ yêu thích: ${title}.`,
+        sequence: previous.sequence + 1,
+      }));
     });
   }
   function changeQuantity(id: string, count: number) {
+    if (count <= 0) restoreFocus(id);
     quantity(id, count);
-    if (count <= 0) restoreFocus();
   }
   return (
     <div ref={root}>
@@ -302,10 +338,33 @@ export function DemoCollection({ mode }: { mode: "wishlist" | "cart" }) {
           ? "Giỏ thử nghiệm không giữ hàng, không tính tiền và không tạo đơn."
           : "Không đồng bộ tài khoản."}
       </p>
-      {selected.length ? (
+      <div className="collection-announcement" role="status">
+        {removalAnnouncement.text && (
+          <span key={removalAnnouncement.sequence}>
+            {removalAnnouncement.text}
+          </span>
+        )}
+      </div>
+      {!initialized ? (
+        <>
+          <p className="collection-pending" role="status">
+            Đang đọc bộ sưu tập trên thiết bị này…
+          </p>
+          <div className="collection-no-script">
+            <p>Cần JavaScript để xem bộ sưu tập trên thiết bị.</p>
+            <Link className="button" href="/catalog">
+              Khám phá kệ sách
+            </Link>
+          </div>
+        </>
+      ) : selected.length ? (
         <div className="collection-list">
           {selected.map((book) => (
-            <article className="collection-row" key={book.id}>
+            <article
+              className="collection-row"
+              key={book.id}
+              data-collection-id={book.id}
+            >
               <Link
                 href={`/products/${book.slug}`}
                 className="mini-cover"
@@ -351,6 +410,7 @@ export function DemoCollection({ mode }: { mode: "wishlist" | "cart" }) {
                     <button
                       className="icon-button"
                       aria-label={`Xóa ${book.title}`}
+                      data-collection-remove
                       onClick={() => changeQuantity(book.id, 0)}
                     >
                       <Trash2 size={17} aria-hidden="true" />
@@ -361,7 +421,9 @@ export function DemoCollection({ mode }: { mode: "wishlist" | "cart" }) {
               <WishlistButton
                 id={book.id}
                 label={book.title}
-                onRemoved={mode === "wishlist" ? restoreFocus : undefined}
+                onRemoved={
+                  mode === "wishlist" ? () => restoreFocus(book.id) : undefined
+                }
               />
             </article>
           ))}
