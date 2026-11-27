@@ -1,0 +1,187 @@
+name: Catalog resilience hosted experiment
+
+on:
+  push:
+    branches: [experiment/catalog-resilience-hosted]
+
+permissions:
+  contents: read
+
+jobs:
+  catalog-resilience:
+    if: >-
+      ${{ github.repository == 'Tran-Nhat-Duy1206/BookStore' &&
+          github.event.created == true && github.event.deleted == false &&
+          github.run_attempt == '1' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CI: "true"
+      NEXT_TELEMETRY_DISABLED: "1"
+      APP_SHA: 9603a88e0a0fe775ca5b58afc3f48663291b93b7
+      EXPERIMENT_SHA: ${{ github.sha }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Verify the hosted Linux runner and start the budget
+        id: hosted
+        timeout-minutes: 1
+        run: |
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          test "$RUNNER_OS" = Linux
+          printf 'started=%s\n' "$(date +%s)" >> "$GITHUB_OUTPUT"
+      - name: Check out the experiment push
+        id: experiment_checkout
+        timeout-minutes: 1
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          path: experiment
+          persist-credentials: false
+      - name: Check out the immutable app revision separately
+        id: app_checkout
+        timeout-minutes: 1
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ env.APP_SHA }}
+          path: app
+          fetch-depth: 0 # The harness verifies ancestor commits.
+          persist-credentials: false
+      - name: Verify both revisions and copy the external harness
+        id: prepare
+        timeout-minutes: 1
+        run: |
+          test "$(git -C experiment rev-parse --verify HEAD)" = "$EXPERIMENT_SHA"
+          test "$(git -C app rev-parse --verify HEAD)" = "$APP_SHA"
+          source=experiment/experiments/catalog-resilience/catalog-resilience.mjs
+          test -f "$source" && test ! -L "$source" || exit 1
+          umask 077
+          mkdir "$RUNNER_TEMP/catalog-resilience"
+          install -m 0600 -- "$source" "$RUNNER_TEMP/catalog-resilience/catalog-resilience.mjs"
+      - name: Set up pnpm
+        id: pnpm
+        timeout-minutes: 1
+        uses: pnpm/action-setup@9bbca1e9dc2902adb87e8780fe5c98796985a62d # v6.1.1 (Node 24)
+        with:
+          version: 11.7.0
+          run_install: false
+          package_json_file: app/package.json
+      - name: Set up Node.js
+        id: node
+        timeout-minutes: 1
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.19.0
+          package-manager-cache: false
+      - name: Install locked dependencies
+        id: dependencies
+        timeout-minutes: 4
+        working-directory: app
+        run: pnpm install --frozen-lockfile >/dev/null 2>&1
+      - name: Build the default fixture-mode storefront
+        id: build
+        timeout-minutes: 4
+        working-directory: app
+        env:
+          DATA_SOURCE: fixture
+        run: pnpm build >/dev/null 2>&1
+      - name: Install Chromium headless shell and OS dependencies
+        id: chromium
+        timeout-minutes: 3
+        working-directory: app
+        run: pnpm exec playwright install --with-deps --only-shell chromium >/dev/null 2>&1
+      - name: Run the isolated catalog resilience harness
+        id: harness
+        timeout-minutes: 16
+        working-directory: app
+        env:
+          STARTED: ${{ steps.hosted.outputs.started }}
+        run: |
+          # Reserve three minutes of the job ceiling for evidence and runner overhead.
+          # On timeout, send TERM before KILL so the harness can clean up.
+          [[ "$STARTED" =~ ^[0-9]+$ ]]
+          remaining=$((27 * 60 - ($(date +%s) - STARTED) - 75))
+          if (( remaining <= 0 )); then
+            echo 'No harness time remains in the job budget.'
+            exit 1
+          fi
+          if (( remaining > 14 * 60 )); then
+            remaining=$((14 * 60))
+          fi
+          # The harness emits only mask commands and fixed sanitized notices.
+          timeout --signal=TERM --kill-after=75s "${remaining}s" env -i \
+            PATH="$PATH" HOME="$HOME" RUNNER_TEMP="$RUNNER_TEMP" TMPDIR="$RUNNER_TEMP" \
+            CI=true GITHUB_ACTIONS=true NEXT_TELEMETRY_DISABLED=1 \
+            RUNNER_OS="$RUNNER_OS" RUNNER_ENVIRONMENT="$RUNNER_ENVIRONMENT" \
+            APP_SHA="$APP_SHA" EXPERIMENT_SHA="$EXPERIMENT_SHA" \
+            EVIDENCE_DIR="$RUNNER_TEMP/catalog-resilience/evidence" \
+            node "$RUNNER_TEMP/catalog-resilience/catalog-resilience.mjs"
+      - name: Stage only sanitized JSON evidence and workflow outcomes
+        if: ${{ always() && !cancelled() }}
+        timeout-minutes: 1
+        env:
+          HOSTED: ${{ steps.hosted.outcome }}
+          EXPERIMENT_CHECKOUT: ${{ steps.experiment_checkout.outcome }}
+          APP_CHECKOUT: ${{ steps.app_checkout.outcome }}
+          PREPARE: ${{ steps.prepare.outcome }}
+          PNPM: ${{ steps.pnpm.outcome }}
+          NODE: ${{ steps.node.outcome }}
+          DEPENDENCIES: ${{ steps.dependencies.outcome }}
+          BUILD: ${{ steps.build.outcome }}
+          CHROMIUM: ${{ steps.chromium.outcome }}
+          HARNESS: ${{ steps.harness.outcome }}
+        run: |
+          umask 077
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ['RUNNER_TEMP']) / 'catalog-resilience'
+          upload = root / 'upload'
+          upload.mkdir(parents=True)
+          source = root / 'evidence' / 'evidence.json'
+          outcomes = ('HOSTED', 'EXPERIMENT_CHECKOUT', 'APP_CHECKOUT', 'PREPARE', 'PNPM',
+                      'NODE', 'DEPENDENCIES', 'BUILD', 'CHROMIUM', 'HARNESS')
+          allowed = {'success', 'failure', 'cancelled', 'skipped'}
+
+          def outcome(key):
+              value = os.environ.get(key, '')
+              return value if value in allowed else 'not_run'
+
+          receipt = {
+              'appSha': os.environ['APP_SHA'],
+              'experimentSha': os.environ['EXPERIMENT_SHA'],
+              'steps': {key.lower(): outcome(key) for key in outcomes},
+              'harnessEvidence': 'missing',
+          }
+          if source.exists() or source.is_symlink():
+              receipt['harnessEvidence'] = 'rejected'
+              if not source.parent.is_symlink() and not source.is_symlink() and source.is_file():
+                  try:
+                      limit = 256 * 1024
+                      with source.open('rb') as handle:
+                          raw = handle.read(limit + 1)
+                      if len(raw) <= limit and isinstance(json.loads(raw.decode('utf-8')), dict):
+                          (upload / 'evidence.json').write_bytes(raw)
+                          receipt['harnessEvidence'] = 'retained'
+                  except (OSError, ValueError):
+                      pass
+          (upload / 'workflow-receipt.json').write_text(json.dumps(receipt) + '\n', encoding='utf-8')
+          if receipt['harnessEvidence'] == 'rejected' or (
+              receipt['steps']['harness'] == 'success' and receipt['harnessEvidence'] != 'retained'
+          ):
+              raise SystemExit('Expected sanitized harness evidence was not retained.')
+          PY
+      - name: Upload only the allowlisted JSON files
+        if: ${{ always() && !cancelled() }}
+        timeout-minutes: 1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2 (Node 24)
+        with:
+          name: catalog-resilience-evidence
+          path: |
+            ${{ runner.temp }}/catalog-resilience/upload/evidence.json
+            ${{ runner.temp }}/catalog-resilience/upload/workflow-receipt.json
+          if-no-files-found: error
+          retention-days: 3
