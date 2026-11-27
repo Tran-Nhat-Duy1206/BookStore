@@ -28,11 +28,11 @@ export default async function Catalog({
   return (
     <div className="container">
       <div className="page-heading">
-        <div className="breadcrumb">
+        <nav className="breadcrumb" aria-label="Đường dẫn">
           <Link href="/">Trang chủ</Link>
-          <span>/</span>
-          <span>Kệ sách</span>
-        </div>
+          <span aria-hidden="true">/</span>
+          <span aria-current="page">Kệ sách</span>
+        </nav>
         <p className="eyebrow">MỖI CÂU CHUYỆN LÀ MỘT CÁNH CỬA</p>
         <h1>Dạo quanh kệ sách</h1>
         <p>
@@ -58,10 +58,10 @@ export default async function Catalog({
               defaultValue={q}
               placeholder="Thử tìm ‘khu vuon’…"
             />
-            <small id="catalog-query-hint">
-              Bạn cũng có thể tìm tên bộ truyện.
-            </small>
           </div>
+          <small className="filter-query-hint" id="catalog-query-hint">
+            Bạn cũng có thể tìm tên bộ truyện.
+          </small>
           <div className="field">
             <label htmlFor="category">Thể loại</label>
             <select id="category" name="category" defaultValue={category}>
@@ -114,11 +114,28 @@ export default async function Catalog({
             Xóa bộ lọc
           </a>
         </div>
-        {items.length ? (
+        {items.length > 0 && (
           <div className="catalog-grid">
             <BookGrid items={items} catalogFilters={filters} />
           </div>
-        ) : (
+        )}
+        {matchingSeries.length > 0 && (
+          <section
+            className="related-section catalog-series-results"
+            aria-labelledby="series-results"
+          >
+            <h2 id="series-results">Bộ truyện phù hợp</h2>
+            <p>
+              Tìm theo tên bộ truyện, không áp dụng thể loại hoặc sắp xếp sách.
+            </p>
+            <div className="series-grid">
+              {matchingSeries.map((item) => (
+                <SeriesCard key={item.id} item={item} books={books} />
+              ))}
+            </div>
+          </section>
+        )}
+        {items.length === 0 && (
           <div className="empty-state">
             <Search size={35} aria-hidden="true" />
             <h2>
@@ -135,19 +152,6 @@ export default async function Catalog({
               <ArrowRight size={17} aria-hidden="true" />
             </Link>
           </div>
-        )}
-        {matchingSeries.length > 0 && (
-          <section className="related-section" aria-labelledby="series-results">
-            <h2 id="series-results">Bộ truyện phù hợp</h2>
-            <p>
-              Tìm theo tên bộ truyện, không áp dụng thể loại hoặc sắp xếp sách.
-            </p>
-            <div className="series-grid">
-              {matchingSeries.map((item) => (
-                <SeriesCard key={item.id} item={item} books={books} />
-              ))}
-            </div>
-          </section>
         )}
       </div>
     </div>

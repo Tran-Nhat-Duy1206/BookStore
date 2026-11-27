@@ -79,17 +79,17 @@ export default async function ProductPage({
   return (
     <div className="container">
       <div className="page-heading">
-        <div className="breadcrumb">
+        <nav className="breadcrumb" aria-label="Đường dẫn">
           <Link href="/">Trang chủ</Link>
-          <span>/</span>
+          <span aria-hidden="true">/</span>
           {catalogSuffix ? (
             <Link href={`/catalog${catalogSuffix}`}>Trở lại kết quả</Link>
           ) : (
             <Link href="/catalog">Kệ sách</Link>
           )}
-          <span>/</span>
-          <span>{book.title}</span>
-        </div>
+          <span aria-hidden="true">/</span>
+          <span aria-current="page">{book.title}</span>
+        </nav>
       </div>
       <div className="page-body">
         <div className="product-layout">

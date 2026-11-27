@@ -1028,23 +1028,30 @@ svg {
   margin-bottom: 25px;
 }
 .filter-bar {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
   align-items: end;
-  gap: 15px;
+  gap: 7px 15px;
   padding: 20px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 5px;
   margin-bottom: 20px;
 }
+.filter-bar > .field-search {
+  min-width: 0;
+}
+.filter-query-hint {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  color: var(--muted);
+  font-size: 11px;
+}
 .field {
   display: flex;
   flex-direction: column;
   gap: 7px;
   min-width: 150px;
-}
-.field-search {
-  flex: 1;
 }
 .field label {
   font-size: 10px;
@@ -1061,6 +1068,10 @@ svg {
   min-width: 0;
   width: 100%;
   font-size: 12px;
+}
+.filter-bar .field input,
+.filter-bar .field select {
+  min-height: 46px;
 }
 .result-line {
   display: flex;
@@ -1094,6 +1105,12 @@ svg {
 }
 .catalog-grid .book-grid {
   row-gap: 40px;
+}
+.result-line + .catalog-series-results {
+  margin-top: 0;
+}
+.catalog-series-results + .empty-state {
+  margin-top: 32px;
 }
 .empty-state {
   padding: 65px 20px;
@@ -1233,6 +1250,25 @@ svg {
 .release-date {
   font-family: var(--font-heading);
   font-size: 19px;
+}
+.collection-no-script {
+  display: none;
+}
+@media (scripting: none) {
+  .collection-pending {
+    display: none;
+  }
+  .collection-no-script {
+    display: block;
+  }
+}
+.collection-announcement {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 .collection-list {
   display: grid;
@@ -1733,25 +1769,20 @@ svg {
     font-size: 12px;
   }
   .filter-bar {
-    flex-wrap: wrap;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     padding: 15px;
     gap: 12px;
-  }
-  .field-search {
-    flex-basis: 100%;
   }
   .field {
     min-width: 0;
     flex: 1;
   }
-  .field-search {
-    flex: 1 0 100%;
-  }
+  .filter-bar > .field-search,
   .filter-bar > .button {
-    width: 100%;
+    grid-column: 1 / -1;
   }
-  .filter-bar .text-link {
-    margin: auto;
+  .filter-query-hint {
+    grid-row: auto;
   }
   .chip {
     font-size: 10px;

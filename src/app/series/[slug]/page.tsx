@@ -29,13 +29,13 @@ export default async function SeriesPage({
   return (
     <div className="container">
       <div className="page-heading">
-        <div className="breadcrumb">
+        <nav className="breadcrumb" aria-label="Đường dẫn">
           <Link href="/">Trang chủ</Link>
-          <span>/</span>
+          <span aria-hidden="true">/</span>
           <Link href="/catalog">Kệ sách</Link>
-          <span>/</span>
-          <span>Bộ truyện</span>
-        </div>
+          <span aria-hidden="true">/</span>
+          <span aria-current="page">{item.title}</span>
+        </nav>
         <p className="eyebrow">Ở LẠI CÙNG NHỮNG NHÂN VẬT QUEN</p>
         <h1>{item.title}</h1>
         <p>{item.description}</p>
