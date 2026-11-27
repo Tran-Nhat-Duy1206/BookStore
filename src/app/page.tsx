@@ -23,6 +23,13 @@ import { AmbientArt, BookTilt, Reveal } from "@/components/motion";
 const categoryIcons = [Feather, Sparkles, Coffee, BookOpen, Orbit, Flower2];
 export default async function Home() {
   const { books, categories, series } = await readCatalog();
+  const featured = [books[0], books[1], books[7], books[4]].filter(Boolean);
+  const releasePreviews = releases
+    .flatMap((release) => {
+      const book = books.find((candidate) => candidate.id === release.bookId);
+      return book ? [{ release, book }] : [];
+    })
+    .slice(0, 3);
   return (
     <>
       <section className="hero container">
@@ -55,7 +62,7 @@ export default async function Home() {
             <span>
               Một không gian đang được vun trồng.
               <br />
-              <strong>Thương hiệu tạm · Sách minh họa · Chưa mở bán</strong>
+              <strong>Bản trình diễn · Sách minh họa · Chưa mở bán</strong>
             </span>
           </div>
         </div>
@@ -69,12 +76,20 @@ export default async function Home() {
           <span className="hero-star star-two" aria-hidden="true">
             ✧
           </span>
-          <div className="hero-book hero-book-back">
-            <BookTilt>{books[1] && <BookCover book={books[1]} />}</BookTilt>
-          </div>
-          <div className="hero-book hero-book-front">
-            <BookTilt>{books[0] && <BookCover book={books[0]} />}</BookTilt>
-          </div>
+          {books[1] && (
+            <div className="hero-book hero-book-back">
+              <BookTilt>
+                <BookCover book={books[1]} />
+              </BookTilt>
+            </div>
+          )}
+          {books[0] && (
+            <div className="hero-book hero-book-front">
+              <BookTilt>
+                <BookCover book={books[0]} />
+              </BookTilt>
+            </div>
+          )}
           <div className="hero-shelf" />
           <div className="hero-sticker">
             <span>mỗi trang sách</span>
@@ -102,28 +117,30 @@ export default async function Home() {
           </span>
         </div>
       </div>
-      <section className="section container">
-        <SectionHeading
-          kicker="BẠN MUỐN ĐI ĐÂU HÔM NAY?"
-          title="Mỗi kệ sách, một lối nhỏ"
-        />
-        <div className="category-grid">
-          {categories.map((category, index) => {
-            const Icon = categoryIcons[index % categoryIcons.length];
-            return (
-              <Link
-                href={`/catalog?category=${category.id}`}
-                className="category-card"
-                key={category.id}
-              >
-                <Icon size={27} strokeWidth={1.3} aria-hidden="true" />
-                <span>{category.label}</span>
-                <ArrowUpRight size={16} aria-hidden="true" />
-              </Link>
-            );
-          })}
-        </div>
-      </section>
+      {categories.length > 0 && (
+        <section className="section container">
+          <SectionHeading
+            kicker="BẠN MUỐN ĐI ĐÂU HÔM NAY?"
+            title="Mỗi kệ sách, một lối nhỏ"
+          />
+          <div className="category-grid">
+            {categories.map((category, index) => {
+              const Icon = categoryIcons[index % categoryIcons.length];
+              return (
+                <Link
+                  href={`/catalog?category=${category.id}`}
+                  className="category-card"
+                  key={category.id}
+                >
+                  <Icon size={27} strokeWidth={1.3} aria-hidden="true" />
+                  <span>{category.label}</span>
+                  <ArrowUpRight size={16} aria-hidden="true" />
+                </Link>
+              );
+            })}
+          </div>
+        </section>
+      )}
       <section className="section container featured-section">
         <SectionHeading
           kicker="ĐẶT MỘT CHÚT BÌNH YÊN LÊN KỆ"
@@ -131,9 +148,17 @@ export default async function Home() {
           href="/catalog"
           linkText="Xem cả kệ sách"
         />
-        <BookGrid
-          items={[books[0], books[1], books[7], books[4]].filter(Boolean)}
-        />
+        {featured.length ? (
+          <BookGrid items={featured} />
+        ) : (
+          <div className="empty-state">
+            <h3>Chưa có sách trên kệ</h3>
+            <p>Bạn vẫn có thể ghé đọc những câu chuyện của tiệm.</p>
+            <Link className="button" href="/news">
+              Đọc chuyện tiệm sách
+            </Link>
+          </div>
+        )}
       </section>
       <section className="reading-note">
         <Reveal className="container reading-note-inner">
@@ -161,35 +186,35 @@ export default async function Home() {
           />
         </Reveal>
       </section>
-      <section className="section container">
-        <SectionHeading
-          kicker="NHỮNG CÂU CHUYỆN CÒN TIẾP"
-          title="Ở lại cùng một bộ truyện"
-          href="/series"
-          linkText="Xem tất cả bộ truyện"
-        />
-        <div className="series-grid">
-          {series.map((item) => (
-            <SeriesCard item={item} books={books} key={item.id} />
-          ))}
-        </div>
-      </section>
-      <section className="section container release-section">
-        <SectionHeading
-          kicker="HẸN BẠN Ở MỘT TRANG SÁCH MỚI"
-          title="Sắp ghé lên kệ"
-          href="/releases"
-          linkText="Xem lịch minh họa"
-        />
-        <p className="section-description">
-          Lịch hư cấu năm 2027 để khám phá giao diện. Không phải thông báo phát
-          hành hoặc nhận đặt trước.
-        </p>
-        <div className="home-releases">
-          {releases.slice(0, 3).map((release) => {
-            const book = books.find((b) => b.id === release.bookId);
-            if (!book) return null;
-            return (
+      {series.length > 0 && (
+        <section className="section container">
+          <SectionHeading
+            kicker="NHỮNG CÂU CHUYỆN CÒN TIẾP"
+            title="Ở lại cùng một bộ truyện"
+            href="/series"
+            linkText="Xem tất cả bộ truyện"
+          />
+          <div className="series-grid">
+            {series.map((item) => (
+              <SeriesCard item={item} books={books} key={item.id} />
+            ))}
+          </div>
+        </section>
+      )}
+      {releasePreviews.length > 0 && (
+        <section className="section container release-section">
+          <SectionHeading
+            kicker="HẸN BẠN Ở MỘT TRANG SÁCH MỚI"
+            title="Sắp ghé lên kệ"
+            href="/releases"
+            linkText="Xem lịch minh họa"
+          />
+          <p className="section-description">
+            Lịch hư cấu năm 2027 để khám phá giao diện. Không phải thông báo
+            phát hành hoặc nhận đặt trước.
+          </p>
+          <div className="home-releases">
+            {releasePreviews.map(({ release, book }) => (
               <Link
                 href={`/products/${book.slug}`}
                 className="release-preview"
@@ -202,10 +227,10 @@ export default async function Home() {
                 <ReleaseBadge status={release.status} />
                 <ArrowUpRight size={18} aria-hidden="true" />
               </Link>
-            );
-          })}
-        </div>
-      </section>
+            ))}
+          </div>
+        </section>
+      )}
       <section className="section container">
         <SectionHeading
           kicker="TỪ GÓC BÀN BIÊN TẬP"
