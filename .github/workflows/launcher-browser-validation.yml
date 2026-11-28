@@ -1,0 +1,219 @@
+name: Linux launcher and browser validation experiment
+
+on:
+  push:
+    branches: [experiment/launcher-browser-validation]
+
+permissions:
+  contents: read
+
+jobs:
+  launcher-browser-validation:
+    if: >-
+      ${{ github.repository == 'Tran-Nhat-Duy1206/BookStore' &&
+          github.event.created == true && github.event.deleted == false &&
+          github.event.forced == false && github.run_attempt == '1' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CI: "true"
+      DATA_SOURCE: fixture
+      NEXT_TELEMETRY_DISABLED: "1"
+      APP_SHA: 0e0bba8dac9fba8f624e7d217ffdb282ca9e987f
+      APP_MERGE_SHA: 7c1dd316cefa634d5291c0cb36fe19aee345e8bf
+      APP_TREE: 6c628a6eb860ea7461b603fd00082136e76af506
+      EXPERIMENT_SHA: ${{ github.sha }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Verify the hosted Linux runner and start the budget
+        id: hosted
+        timeout-minutes: 1
+        run: |
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          test "$RUNNER_OS" = Linux
+          printf 'started=%s\n' "$(date +%s)" >> "$GITHUB_OUTPUT"
+      - name: Check out the experiment push
+        id: experiment_checkout
+        timeout-minutes: 1
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          path: experiment
+          persist-credentials: false
+      - name: Check out the immutable application separately
+        id: app_checkout
+        timeout-minutes: 1
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ env.APP_SHA }}
+          path: app
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify both revisions and stage the external harness
+        id: prepare
+        timeout-minutes: 1
+        run: |
+          test "$(git -C experiment rev-parse --verify HEAD)" = "$EXPERIMENT_SHA"
+          test "$(git -C app rev-parse --verify HEAD)" = "$APP_SHA"
+          test "$(git -C app rev-parse --verify 'HEAD^{tree}')" = "$APP_TREE"
+          test "$(git -C app rev-parse --verify "$APP_MERGE_SHA^{tree}")" = "$APP_TREE"
+          git -C app merge-base --is-ancestor "$APP_SHA" "$APP_MERGE_SHA"
+          test -z "$(git -C app status --porcelain)"
+          source=experiment/experiments/launcher-browser-validation/launcher-browser-validation.mjs
+          test -f "$source" && test ! -L "$source" || exit 1
+          umask 077
+          mkdir "$RUNNER_TEMP/launcher-browser-validation"
+          install -m 0600 -- "$source" "$RUNNER_TEMP/launcher-browser-validation/launcher-browser-validation.mjs"
+      - name: Set up pinned pnpm
+        id: pnpm
+        timeout-minutes: 1
+        uses: pnpm/action-setup@9bbca1e9dc2902adb87e8780fe5c98796985a62d # v6.1.1
+        with:
+          version: 11.7.0
+          run_install: false
+          package_json_file: app/package.json
+      - name: Set up pinned Node.js
+        id: node
+        timeout-minutes: 1
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.19.0
+          package-manager-cache: false
+      - name: Install locked application dependencies
+        id: dependencies
+        timeout-minutes: 4
+        working-directory: app
+        run: pnpm install --frozen-lockfile >/dev/null 2>&1
+      - name: Build the fixture-mode storefront
+        id: build
+        timeout-minutes: 4
+        working-directory: app
+        env:
+          DATABASE_URL: ""
+          TEST_DATABASE_URL: ""
+          BOOKSTORE_LOCAL_DB_READS: ""
+        run: pnpm build >/dev/null 2>&1
+      # Keep going after an engine setup failure so the harness can record each
+      # independently. The final check uses outcomes, not adjusted conclusions.
+      - name: Install pinned Chromium and OS dependencies
+        id: chromium
+        continue-on-error: true
+        timeout-minutes: 5
+        working-directory: app
+        run: timeout --kill-after=10s 240s pnpm exec playwright install --with-deps --only-shell chromium >/dev/null 2>&1
+      - name: Install pinned Firefox and OS dependencies
+        id: firefox
+        continue-on-error: true
+        timeout-minutes: 5
+        working-directory: app
+        run: timeout --kill-after=10s 240s pnpm exec playwright install --with-deps firefox >/dev/null 2>&1
+      - name: Install pinned WebKit and OS dependencies
+        id: webkit
+        continue-on-error: true
+        timeout-minutes: 5
+        working-directory: app
+        run: timeout --kill-after=10s 240s pnpm exec playwright install --with-deps webkit >/dev/null 2>&1
+      - name: Run the isolated launcher and browser harness
+        id: harness
+        timeout-minutes: 17
+        working-directory: app
+        env:
+          STARTED: ${{ steps.hosted.outputs.started }}
+        run: |
+          # Reserve time for explicit owned-child cleanup and evidence upload.
+          [[ "$STARTED" =~ ^[0-9]+$ ]]
+          remaining=$((27 * 60 - ($(date +%s) - STARTED) - 60))
+          if (( remaining <= 0 )); then
+            echo 'No harness time remains within the job budget.'
+            exit 1
+          fi
+          if (( remaining > 15 * 60 )); then
+            remaining=$((15 * 60))
+          fi
+          timeout --foreground --signal=TERM --kill-after=60s "${remaining}s" env -i \
+            PATH="$PATH" HOME="$HOME" RUNNER_TEMP="$RUNNER_TEMP" TMPDIR="$RUNNER_TEMP" \
+            CI=true GITHUB_ACTIONS=true DATA_SOURCE=fixture NEXT_TELEMETRY_DISABLED=1 \
+            RUNNER_OS="$RUNNER_OS" RUNNER_ENVIRONMENT="$RUNNER_ENVIRONMENT" \
+            APP_SHA="$APP_SHA" EXPERIMENT_SHA="$EXPERIMENT_SHA" \
+            EVIDENCE_DIR="$RUNNER_TEMP/launcher-browser-validation/evidence" \
+            node "$RUNNER_TEMP/launcher-browser-validation/launcher-browser-validation.mjs"
+      - name: Stage only sanitized JSON evidence and workflow outcomes
+        id: stage
+        if: ${{ always() && !cancelled() }}
+        timeout-minutes: 1
+        env:
+          HOSTED: ${{ steps.hosted.outcome }}
+          EXPERIMENT_CHECKOUT: ${{ steps.experiment_checkout.outcome }}
+          APP_CHECKOUT: ${{ steps.app_checkout.outcome }}
+          PREPARE: ${{ steps.prepare.outcome }}
+          PNPM: ${{ steps.pnpm.outcome }}
+          NODE: ${{ steps.node.outcome }}
+          DEPENDENCIES: ${{ steps.dependencies.outcome }}
+          BUILD: ${{ steps.build.outcome }}
+          CHROMIUM: ${{ steps.chromium.outcome }}
+          FIREFOX: ${{ steps.firefox.outcome }}
+          WEBKIT: ${{ steps.webkit.outcome }}
+          HARNESS: ${{ steps.harness.outcome }}
+        run: |
+          umask 077
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ['RUNNER_TEMP']) / 'launcher-browser-validation'
+          upload = root / 'upload'
+          upload.mkdir(parents=True)
+          source = root / 'evidence' / 'evidence.json'
+          outcomes = ('HOSTED', 'EXPERIMENT_CHECKOUT', 'APP_CHECKOUT', 'PREPARE', 'PNPM',
+                      'NODE', 'DEPENDENCIES', 'BUILD', 'CHROMIUM', 'FIREFOX', 'WEBKIT', 'HARNESS')
+          allowed = {'success', 'failure', 'cancelled', 'skipped'}
+
+          def outcome(key):
+              value = os.environ.get(key, '')
+              return value if value in allowed else 'not_run'
+
+          def invalid_constant(_value):
+              raise ValueError('Non-JSON numeric constant')
+
+          receipt = {
+              'appSha': os.environ['APP_SHA'],
+              'appMergeSha': os.environ['APP_MERGE_SHA'],
+              'appTree': os.environ['APP_TREE'],
+              'experimentSha': os.environ['EXPERIMENT_SHA'],
+              'steps': {key.lower(): outcome(key) for key in outcomes},
+              'harnessEvidence': 'missing',
+          }
+          if source.exists() or source.is_symlink():
+              receipt['harnessEvidence'] = 'rejected'
+              if not source.parent.is_symlink() and not source.is_symlink() and source.is_file():
+                  try:
+                      limit = 1024 * 1024
+                      with source.open('rb') as handle:
+                          raw = handle.read(limit + 1)
+                      if len(raw) <= limit and isinstance(json.loads(raw.decode('utf-8'), parse_constant=invalid_constant), dict):
+                          (upload / 'evidence.json').write_bytes(raw)
+                          receipt['harnessEvidence'] = 'retained'
+                  except (OSError, ValueError, RecursionError):
+                      pass
+          (upload / 'workflow-receipt.json').write_text(json.dumps(receipt) + '\n', encoding='utf-8')
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+              output.write('safe_upload=true\n')
+          if receipt['harnessEvidence'] != 'retained':
+              raise SystemExit('Expected sanitized harness evidence was not retained.')
+          if any(receipt['steps'][engine] != 'success' for engine in ('chromium', 'firefox', 'webkit')):
+              raise SystemExit('One or more browser installations did not succeed.')
+          PY
+      - name: Upload only the allowlisted JSON files
+        if: ${{ always() && !cancelled() && steps.stage.outputs.safe_upload == 'true' }}
+        timeout-minutes: 1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2 (Node 24)
+        with:
+          name: launcher-browser-validation-evidence
+          path: |
+            ${{ runner.temp }}/launcher-browser-validation/upload/evidence.json
+            ${{ runner.temp }}/launcher-browser-validation/upload/workflow-receipt.json
+          if-no-files-found: error
+          retention-days: 3
