@@ -26,6 +26,8 @@ pnpm test:e2e
 
 E2E dùng production build tại `http://127.0.0.1:3100`, tự khởi động/dừng server. Chạy `pnpm build` trước. Không chiếm dụng URL GUI DSH. Playwright tải Chromium lần đầu; không phải dịch vụ trả phí.
 
+[Chạy bản demo release](./docs/release-configuration.md): dùng `pnpm exec tsx scripts/start-release.ts staging-demo` cho bản demo fixture chỉ trên loopback. `pnpm start` vẫn chạy `next start` trực tiếp để tương thích, không qua launcher; cả hai không phải quy trình triển khai production.
+
 ## Frontend được triển khai
 
 - Responsive shell, search, mobile menu và quick-cart drawer.
