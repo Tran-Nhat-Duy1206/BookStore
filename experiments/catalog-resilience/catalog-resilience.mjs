@@ -1,14 +1,18 @@
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { mkdir, readFile, readdir, realpath, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readFile, readdir, realpath, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { createConnection, createServer } from 'node:net';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
+import { runInNewContext } from 'node:vm';
 
 const SHA = '9603a88e0a0fe775ca5b58afc3f48663291b93b7';
+const ORIGINAL_EXPERIMENT = 'c597a30210cd97cf050ed4cd5004c02522b6dcec';
+const EXPERIMENT_REF = 'refs/heads/experiment/catalog-resilience-hosted';
+const REPOSITORY = 'Tran-Nhat-Duy1206/BookStore';
 const HOST = '127.0.0.1';
 const APP_PORT = 3001;
 const RELAY_PORT = 55432;
@@ -111,7 +115,7 @@ function verifyOwnership(runtime = true) {
   });
 }
 function makeRelay() {
-  let mode = 'normal', ticket, sequence = 0, accepted = 0, rejected = 0, upstreamBytes = 0, downstreamEvents = 0;
+  let mode = 'normal', ticket, notifyTrigger, sequence = 0, accepted = 0, rejected = 0, upstreamBytes = 0, downstreamEvents = 0;
   const pairs = new Set();
   const snapshot = () => ({ active: pairs.size, accepted, rejected, upstreamBytes, downstreamEvents });
   const server = createServer((client) => {
@@ -136,10 +140,12 @@ function makeRelay() {
       armed.triggeredAt = now();
       pair.timer = setTimeout(() => {
         if (client.destroyed || db.destroyed) return;
-        armed.observedMs = performance.now() - armed.triggered;
+        armed.releasedMonotonic = performance.now();
+        armed.observedMs = armed.releasedMonotonic - armed.triggered;
         armed.releasedAt = now();
         forward(chunk);
       }, DELAY);
+      notifyTrigger();
     });
   });
   // A listening relay error is not allowed to disappear as a valid sample.
@@ -154,6 +160,12 @@ function makeRelay() {
       const before = snapshot();
       mode = next;
       ticket = next === 'delayed' ? { id: ++sequence, armedAt: now() } : undefined;
+      notifyTrigger = undefined;
+      if (ticket) {
+        // These synchronization fields are intentionally not part of the original evidence schema.
+        const whenTriggered = new Promise((resolve) => { notifyTrigger = resolve; });
+        Object.defineProperties(ticket, { whenTriggered: { value: whenTriggered }, releasedMonotonic: { writable: true } });
+      }
       if (next === 'outage') for (const pair of pairs) { clearTimeout(pair.timer); pair.client.destroy(); pair.db.destroy(); }
       sanitized.modes.push({ mode, at: now(), before, after: snapshot(), ...(ticket ? { ticket } : {}) });
       return ticket;
@@ -355,6 +367,57 @@ async function prepareEvidence() {
   check(found === intended && (await readdir(found)).length === 0, 'evidence-directory-already-used-or-linked');
   evidenceDir = found;
 }
+function selectRunMode(event, experiment) {
+  check(event?.repository?.full_name === REPOSITORY && event.ref === EXPERIMENT_REF && event.after === experiment && event.deleted === false, 'push-event-identity-mismatch');
+  if (event.created === true) return 'original-full-protocol';
+  check(event.created === false && event.forced === false && event.before === ORIGINAL_EXPERIMENT && experiment !== ORIGINAL_EXPERIMENT, 'push-event-not-approved-followup');
+  return 'targeted-loading-followup';
+}
+async function verifyWorkflowGuard(checkout) {
+  const workflow = await readFile(join(checkout, '.github', 'workflows', 'catalog-resilience-experiment.yml'), 'utf8');
+  const trigger = `on:\n  push:\n    branches: [${EXPERIMENT_REF.slice('refs/heads/'.length)}]\n\npermissions:\n  contents: read\n`;
+  check(workflow.includes(trigger), 'workflow-trigger-or-permissions-mismatch');
+  const guard = workflow.match(/\n    if: >-\n\s*\$\{\{([\s\S]*?)\}\}\n    runs-on:/)?.[1]?.trim().replace(/\s+/g, ' ');
+  const expected = `github.repository == '${REPOSITORY}' && github.event.deleted == false && github.run_attempt == '1' && (github.event.created == true || (github.event.created == false && github.event.forced == false && github.event.before == '${ORIGINAL_EXPERIMENT}'))`;
+  check(guard === expected, 'workflow-job-guard-mismatch');
+  const evaluate = (repository, ref, run_attempt, event) => ref === EXPERIMENT_REF && runInNewContext(expected.replaceAll(' == ', ' === '), { github: { repository, run_attempt, event } }, { timeout: 100 }) === true;
+  const base = { before: ORIGINAL_EXPERIMENT, created: false, deleted: false, forced: false };
+  const cases = [
+    ['branch-creation', REPOSITORY, EXPERIMENT_REF, '1', { ...base, before: '0'.repeat(40), created: true }, true],
+    ['approved-predecessor', REPOSITORY, EXPERIMENT_REF, '1', base, true],
+    ['different-predecessor', REPOSITORY, EXPERIMENT_REF, '1', { ...base, before: 'f'.repeat(40) }, false],
+    ['different-repository', 'other/BookStore', EXPERIMENT_REF, '1', base, false],
+    ['different-branch', REPOSITORY, 'refs/heads/main', '1', base, false],
+    ['second-attempt', REPOSITORY, EXPERIMENT_REF, '2', base, false],
+    ['branch-deletion', REPOSITORY, EXPERIMENT_REF, '1', { ...base, deleted: true }, false],
+    ['forced-update', REPOSITORY, EXPERIMENT_REF, '1', { ...base, forced: true }, false],
+  ];
+  return Object.fromEntries(cases.map(([name, repo, ref, attempt, event, eligible]) => {
+    check(evaluate(repo, ref, attempt, event) === eligible, `inert-workflow-guard-${name}-failed`);
+    return [name, eligible ? 'eligible' : 'rejected'];
+  }));
+}
+async function verifiedRunMode() {
+  // The runner writes this file under RUNNER_TEMP before starting the job. The
+  // existing env -i wrapper intentionally does not pass GITHUB_EVENT_PATH.
+  const temp = await realpath(process.env.RUNNER_TEMP);
+  const path = join(temp, '_github_workflow', 'event.json');
+  const file = await lstat(path).catch(() => null);
+  check(file?.isFile() && file.uid === process.getuid() && file.size <= 2 * 1024 * 1024 && await realpath(path) === path, 'runner-push-event-file-unavailable');
+  const event = await readFile(path, 'utf8').then(JSON.parse).catch(() => { throw new CheckError('runner-push-event-invalid-json'); });
+  const mode = selectRunMode(event, sanitized.experiment);
+  if (mode === 'targeted-loading-followup') {
+    const experimentCheckout = join(dirname(APP), 'experiment');
+    check(await git(['-C', experimentCheckout, 'rev-parse', 'HEAD']) === sanitized.experiment, 'experiment-checkout-mismatch');
+    const commitObject = await git(['-C', experimentCheckout, 'cat-file', 'commit', 'HEAD']);
+    const parents = commitObject.split('\n\n', 1)[0].split('\n').filter((line) => line.startsWith('parent '));
+    check(parents.length === 1 && parents[0] === `parent ${ORIGINAL_EXPERIMENT}`, 'experiment-not-direct-successor');
+    sanitized.followup = { mode, event: { repository: REPOSITORY, ref: EXPERIMENT_REF, before: ORIGINAL_EXPERIMENT, after: sanitized.experiment, created: false, forced: false, deleted: false }, excluded: ['full timing matrix', 'outage and restoration cycles', 'configuration-only smoke', 'unrelated regression and security suites'], diagnostic: { native: 'original page evaluation unavailable during document transition', hydrated: 'original observer stopped at RSC headers, before useful content' } };
+    sanitized.followup.guardValidation = await verifyWorkflowGuard(experimentCheckout);
+    sanitized.methodology = { observations: ['native GET', 'hydrated link'], samplesPerObservation: 1, delayMs: DELAY, documentLimitMs: DOCUMENT_LIMIT, renderLimitMs: RENDER_LIMIT, setupCommandLimitMs: sanitized.methodology.setupCommandLimitMs, cleanupLimits: sanitized.methodology.cleanupLimits, viewport: sanitized.methodology.viewport, scope: 'targeted browser observations; transport delay only, not SQL or production latency' };
+  }
+  return mode;
+}
 async function setup() {
   check(process.platform === 'linux' && process.env.RUNNER_OS === 'Linux' && process.env.GITHUB_ACTIONS === 'true' && process.env.RUNNER_ENVIRONMENT === 'github-hosted', 'not-approved-disposable-hosted-linux');
   check(process.env.APP_SHA === SHA && /^[a-f0-9]{40}$/.test(process.env.EXPERIMENT_SHA ?? ''), 'sha-input-mismatch');
@@ -482,6 +545,227 @@ async function samples() {
     sanitized.samples.summary[kind] = summary;
   }
 }
+async function targetedObservations() {
+  sanitized.followup.observations = [];
+  // Six JPEG payloads cost at most 176 KiB once base64-encoded, leaving room in evidence.json.
+  const jpegLimit = 22 * 1024;
+  for (const [label, hydrated] of [['targeted-native-get', false], ['targeted-hydrated-link', true]]) {
+    const item = { label, navigation: hydrated ? 'hydrated-link' : 'native-get', path: CATALOG, frames: {} };
+    let isolated = true;
+    sanitized.followup.observations.push(item);
+    await protectedCase(label, item, async () => {
+      const provisionalImages = {};
+      await pageIn({ javaScriptEnabled: hydrated }, async (page) => {
+        const deadline = performance.now() + DOCUMENT_LIMIT;
+        const within = (promise, code) => bounded(promise, Math.max(1, deadline - performance.now()), code);
+        page.setDefaultTimeout(RENDER_LIMIT);
+        await within(sameProcess({}), 'followup-source-process-timeout');
+        check(!interrupted.signal.aborted, 'run-interrupted');
+        const cdp = await within(page.context().newCDPSession(page), 'followup-cdp-session-timeout');
+        let measured = false, documentCount = 0, targetRequests = 0, competingRequests = 0;
+        let requested, responded, actionAt, ticket;
+        const isTarget = (request) => {
+          if (request.method() !== 'GET') return false;
+          if (!hydrated) return request.url() === ORIGIN + CATALOG && request.isNavigationRequest() && request.resourceType() === 'document';
+          const url = new URL(request.url());
+          if (url.origin !== ORIGIN || url.pathname !== '/catalog' || request.headers().rsc !== '1' || request.isNavigationRequest()) return false;
+          url.searchParams.delete('_rsc');
+          return url.searchParams.toString() === QUERY;
+        };
+        // Disable speculative RSC requests (including during source setup). While measuring,
+        // reject competing page data requests; ordinary static assets can still render.
+        await within(page.route('**/*', (route) => {
+          const req = route.request(), headers = req.headers();
+          if (headers['next-router-prefetch'] !== undefined || headers['next-router-segment-prefetch'] !== undefined || headers.purpose === 'prefetch' || headers['sec-purpose']?.includes('prefetch')) return route.abort();
+          if (measured && isTarget(req)) {
+            targetRequests++;
+            requested ??= performance.now(); // The origin cannot see this request before continue().
+          } else if (measured && ['document', 'fetch', 'xhr'].includes(req.resourceType())) {
+            competingRequests++;
+            return route.abort();
+          }
+          return route.continue();
+        }), 'followup-route-setup-timeout');
+        const seeRequest = (req) => { if (measured && req.resourceType() === 'document' && req.isNavigationRequest()) documentCount++; };
+        const seeResponse = (res) => { if (measured && isTarget(res.request())) responded ??= performance.now(); };
+        const send = (method, params) => within(cdp.send(method, params), 'followup-cdp-timeout');
+        const screenState = async () => {
+          const result = await send('Runtime.evaluate', { returnByValue: true, expression: `(() => {
+            const links = [...document.querySelectorAll('.catalog-grid .book-card h3 a')];
+            const first = links[0];
+            const expectedControls = ${JSON.stringify(Object.entries(FILTER))};
+            const expectedBooks = ${JSON.stringify(TITLES.map((title, i) => [title, LINKS[i]]))};
+            const catalogHeading = document.querySelector('main h1')?.textContent?.trim() === 'Dạo quanh kệ sách';
+            const rect = first?.getBoundingClientRect();
+            const x = rect && Math.max(0, Math.min(innerWidth - 1, rect.left + rect.width / 2));
+            const y = rect && Math.max(0, Math.min(innerHeight - 1, rect.top + rect.height / 2));
+            return {
+              activeWindow: document.hasFocus() && document.visibilityState === 'visible',
+              catalogHeading,
+              usefulDestinationDom: catalogHeading && location.href === ${JSON.stringify(ORIGIN + CATALOG)} &&
+                expectedControls.every(([key, value]) => document.querySelector('form.filter-bar [name=' + key + ']')?.value === value) &&
+                JSON.stringify(links.map((link) => [link.textContent?.trim(), link.getAttribute('href')])) === JSON.stringify(expectedBooks) &&
+                document.querySelector('.result-line span')?.textContent?.trim() === ${JSON.stringify(countText)},
+              productHeading: document.querySelector('main h1')?.textContent?.trim() === ${JSON.stringify(TITLES[0])},
+              targetFocused: document.activeElement?.matches(${JSON.stringify(hydrated ? '.breadcrumb a[href=' + JSON.stringify(CATALOG) + ']' : 'form.filter-bar button[type=submit]')}) ?? false,
+              firstResultInViewport: first?.textContent?.trim() === ${JSON.stringify(TITLES[0])} && !!rect && rect.width > 0 && rect.height > 0 && first.contains(document.elementFromPoint(x, y)),
+              viewport: { width: innerWidth, height: innerHeight }
+            };
+          })()` });
+          check(!result.exceptionDetails && result.result.value, 'followup-cdp-screen-state-unavailable');
+          return result.result.value;
+        };
+        let sourceLoaderId;
+        async function frame(stage, inWindow = () => true) {
+          const during = stage === 'during';
+          check(inWindow(), 'followup-capture-window-already-closed');
+          // During a native provisional navigation Runtime.evaluate can be unavailable.
+          // Capture first on the foreground target; the bounded DOM probe is supplemental.
+          const a = during ? undefined : await screenState();
+          if (a) check(a.activeWindow, 'followup-window-not-active-before-frame');
+          let data, bytes, quality, captureStarted, captureFinished;
+          for (quality of [30, 20, 10]) {
+            check(inWindow(), 'followup-capture-window-closed-before-screenshot');
+            captureStarted = performance.now();
+            ({ data } = await send('Page.captureScreenshot', { format: 'jpeg', quality, fromSurface: true, captureBeyondViewport: false }));
+            captureFinished = performance.now();
+            bytes = Buffer.from(data, 'base64');
+            if (bytes.length <= jpegLimit) break;
+          }
+          check(bytes.length >= 4 && bytes.length <= jpegLimit && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes.at(-2) === 0xff && bytes.at(-1) === 0xd9, 'followup-jpeg-invalid-or-over-budget');
+          check(captureFinished < deadline && inWindow(), 'followup-frame-not-wholly-in-capture-window');
+          provisionalImages[stage] = data;
+          const capture = { mime: 'image/jpeg', quality, bytes: bytes.length };
+          if (during) {
+            const focusStart = performance.now();
+            const focus = await bounded(Promise.all([screenState(), send('Page.getFrameTree')]), 200, 'focus-probe-timeout').then(([state, { frameTree }]) => {
+              if (!inWindow()) return { category: 'probe-outside-hold' };
+              if (frameTree.frame.loaderId !== sourceLoaderId) return { category: 'replacement-document', activeWindow: state.activeWindow, usefulDestinationDom: state.usefulDestinationDom };
+              return { category: state.activeWindow ? 'active-window-observed' : 'inactive-window-observed', state };
+            }, (error) => ({ category: safeFailure(error) === 'focus-probe-timeout' ? 'probe-timeout' : 'probe-unavailable' }));
+            item.frames[stage] = { ...capture, activeTargetBasis: 'foreground-confirmed-before-keypress-single-page-context', focus: { ...focus, separateFromScreenshot: true, startAfterTriggerMs: focusStart - ticket.triggered, endAfterTriggerMs: performance.now() - ticket.triggered }, screenshotStartAfterTriggerMs: captureStarted - ticket.triggered, screenshotEndAfterTriggerMs: captureFinished - ticket.triggered };
+            check(focus.category !== 'inactive-window-observed' && focus.activeWindow !== false, 'followup-wait-window-not-active');
+          } else {
+            const b = await screenState();
+            check(performance.now() < deadline && b.activeWindow, 'followup-window-not-active-after-frame');
+            check(JSON.stringify(a.viewport) === JSON.stringify(sanitized.methodology.viewport) && JSON.stringify(b.viewport) === JSON.stringify(a.viewport), 'followup-frame-viewport-mismatch');
+            if (stage === 'before') check(a.targetFocused && b.targetFocused && (hydrated ? a.productHeading && b.productHeading : a.catalogHeading && b.catalogHeading), 'followup-source-frame-focus-or-heading-mismatch');
+            if (stage === 'after') check(a.catalogHeading && b.catalogHeading && a.firstResultInViewport && b.firstResultInViewport, 'followup-destination-result-not-in-frame');
+            item.frames[stage] = { ...capture, stateBefore: a, stateAfter: b };
+          }
+          return { bytes, end: captureFinished };
+        }
+        if (hydrated) {
+          const versions = ['react', 'react-dom', 'next'].map((pkg) => requireApp(`${pkg}/package.json`).version);
+          check(versions.join('/') === '19.3.1/19.3.1/16.4.5', 'followup-hydration-private-probe-pin-mismatch');
+          await within(productReturn(page, item), 'followup-product-source-timeout');
+        } else {
+          const source = await within(page.goto(ORIGIN + '/catalog', { waitUntil: 'domcontentloaded', timeout: DOCUMENT_LIMIT }), 'followup-native-source-timeout');
+          check(source?.status() === 200 && page.url() === ORIGIN + '/catalog', 'followup-native-source-status-or-url-mismatch');
+          noPublicLeaks(await within(source.text(), 'followup-native-source-body-timeout'));
+          const form = page.locator('form.filter-bar');
+          await within(form.locator('[name="q"]').fill(FILTER.q), 'followup-native-search-setup-timeout');
+          for (const name of ['category', 'sort']) await within(form.locator(`[name="${name}"]`).selectOption(FILTER[name]), 'followup-native-select-setup-timeout');
+          item.sourceStatus = source.status();
+        }
+        await within(page.waitForLoadState('load', { timeout: RENDER_LIMIT }), 'followup-source-load-timeout');
+        await within(page.bringToFront(), 'followup-activate-window-timeout');
+        const selector = hydrated ? '.breadcrumb a[href=' + JSON.stringify(CATALOG) + ']' : 'form.filter-bar button[type=submit]';
+        if (hydrated) {
+          // A server-rendered Link is not sufficient: require React's attached host node,
+          // its Next Link click handler and a committed non-dehydrated HostRoot at pinned versions.
+          const ready = await within(page.waitForFunction((sel) => {
+            const anchor = document.querySelector(sel);
+            if (!anchor?.isConnected) return false;
+            const keys = Object.getOwnPropertyNames(anchor);
+            const fiber = anchor[keys.find((k) => k.startsWith('__reactFiber$'))];
+            const props = anchor[keys.find((k) => k.startsWith('__reactProps$'))];
+            if (fiber?.tag !== 5 || fiber.stateNode !== anchor || typeof props?.onClick !== 'function') return false;
+            let root = fiber;
+            while (root.return) root = root.return;
+            return root.tag === 3 && root.stateNode?.current?.memoizedState?.isDehydrated === false;
+          }, selector, { timeout: RENDER_LIMIT }), 'followup-hydration-timeout');
+          await within(ready.dispose(), 'followup-hydration-handle-timeout');
+          await within(page.evaluate(() => { window.__catalogResilienceDocument = true; }), 'followup-source-document-sentinel-timeout');
+          item.hydration = { react: '19.3.1', next: '16.4.5', committedHostFiberAndLinkHandler: true };
+        }
+        noPublicLeaks(await within(page.locator('body').evaluate((body) => body.outerHTML), 'followup-source-redaction-timeout'));
+        const { root } = await send('DOM.getDocument', { depth: 0 });
+        const { nodeId } = await send('DOM.querySelector', { nodeId: root.nodeId, selector });
+        check(nodeId, 'followup-cdp-focus-target-not-found');
+        await send('DOM.focus', { nodeId });
+        ({ frameTree: { frame: { loaderId: sourceLoaderId } } } = await send('Page.getFrameTree'));
+        const beforeFrame = await frame('before');
+        const before = relay.snapshot();
+        check(performance.now() < deadline && !interrupted.signal.aborted, 'followup-action-deadline-or-interruption');
+        page.on('request', seeRequest);
+        page.on('response', seeResponse);
+        try {
+          const response = page.waitForResponse((res) => measured && isTarget(res.request()), { timeout: Math.max(1, deadline - performance.now()) });
+          void response.catch(() => {});
+          ticket = relay.set('delayed');
+          actionAt = performance.now();
+          measured = true;
+          const press = page.keyboard.press('Enter');
+          void press.catch(() => {});
+          await within(ticket.whenTriggered, 'followup-relay-trigger-timeout');
+          const onTrigger = relay.snapshot();
+          check(requested >= actionAt && requested <= ticket.triggered && targetRequests === 1 && competingRequests === 0 && onTrigger.upstreamBytes > before.upstreamBytes && onTrigger.downstreamEvents > before.downstreamEvents, 'followup-relay-trigger-not-attributable');
+          item.relay = { ticketId: ticket.id, requestMs: requested - actionAt, triggerMs: ticket.triggered - actionAt, upstreamBytesAtTrigger: onTrigger.upstreamBytes - before.upstreamBytes };
+          const during = await frame('during', () => ticket.releasedMonotonic === undefined && (hydrated || responded === undefined));
+          // RSC headers may arrive before the relay releases its chunk. Treat them as a
+          // milestone only; validate the useful destination and completed body independently.
+          const [res] = await within(Promise.all([response, press]), 'followup-target-response-timeout');
+          if (hydrated) item.rscStatus = res.status();
+          else item.documentStatus = res.status();
+          item.responseMs = responded - actionAt;
+          check(res.status() === 200 && (hydrated ? res.headers()['content-type']?.startsWith('text/x-component') : isDoc(res, CATALOG)), 'followup-target-status-or-transport-mismatch');
+          await within(page.waitForURL(ORIGIN + CATALOG, { timeout: RENDER_LIMIT, waitUntil: 'commit' }), 'followup-destination-url-timeout');
+          await within(catalog(page, item), 'followup-destination-render-timeout');
+          const usefulAt = performance.now();
+          // Verification receipt, not first paint or the first appearance of catalog data.
+          item.usefulVerifiedMs = usefulAt - actionAt;
+          const raw = await within(res.text(), 'followup-target-body-timeout');
+          item.relay.holdMs = ticket.observedMs;
+          item.relay.releaseMs = ticket.releasedMonotonic - actionAt;
+          item.relay.headersBeforeRelease = responded < ticket.releasedMonotonic;
+          check(ticket.observedMs >= DELAY - 2 && ticket.observedMs < DELAY + 500 && during.end < ticket.releasedMonotonic && ticket.releasedMonotonic <= usefulAt && (hydrated || ticket.releasedMonotonic <= responded), 'followup-relay-release-frame-or-destination-order');
+          noPublicLeaks(raw);
+          check(raw.includes(MARKER), 'followup-target-body-source-marker-missing');
+          noPublicLeaks(await within(page.locator('body').evaluate((body) => body.outerHTML), 'followup-destination-redaction-timeout'));
+          item.redacted = true;
+          // Deliberately scroll the validated first result into view for the final evidence frame.
+          await within(page.locator('.catalog-grid .book-card h3 a').first().scrollIntoViewIfNeeded(), 'followup-result-scroll-timeout');
+          const after = await frame('after');
+          item.frameComparison = { basis: 'jpeg-bytes-only-not-a-visual-classifier', duringJpegEqualsBefore: during.bytes.equals(beforeFrame.bytes), duringJpegEqualsAfter: during.bytes.equals(after.bytes), afterScrolledToFirstResult: true };
+          if (hydrated) check(await within(page.evaluate(() => window.__catalogResilienceDocument === true), 'followup-document-continuity-timeout'), 'followup-hydrated-document-replaced');
+          await within(sameProcess(item), 'followup-destination-process-timeout');
+          check(documentCount === (hydrated ? 0 : 1) && targetRequests === 1 && competingRequests === 0, 'followup-navigation-request-count-mismatch');
+          check(performance.now() < deadline, 'followup-case-ceiling-exceeded');
+          item.withinCeiling = true;
+        } finally {
+          measured = false;
+          item.navigationDocumentCount = documentCount;
+          item.targetRequests = targetRequests;
+          item.competingRequests = competingRequests;
+          page.off('request', seeRequest);
+          page.off('response', seeResponse);
+          if (ticket) {
+            isolated = ticket.releasedMonotonic !== undefined;
+            relay.set('normal');
+          }
+        }
+      });
+      // Never export provisional pixels from a case that failed validation/redaction.
+      for (const [stage, base64] of Object.entries(provisionalImages)) item.frames[stage].base64 = base64;
+      item.pass = true;
+    });
+    if (!isolated) {
+      item.followingCaseIsolationUnproved = true;
+      break;
+    }
+  }
+}
 async function outageCycles() {
   for (let number = 1; number <= 3; number++) {
     const cycle = { number, healthy: {}, outage: {}, persistent: {}, independentRestoration: {}, firstRestored: {}, post404: {} };
@@ -577,17 +861,32 @@ process.on('SIGTERM', onSignal);
 process.on('SIGINT', onSignal);
 try {
   await prepareEvidence();
+  check(process.platform === 'linux' && process.env.GITHUB_ACTIONS === 'true' && process.env.RUNNER_ENVIRONMENT === 'github-hosted' && process.env.APP_SHA === SHA && /^[a-f0-9]{40}$/.test(process.env.EXPERIMENT_SHA ?? ''), 'runner-or-sha-input-mismatch');
+  sanitized.experiment = process.env.EXPERIMENT_SHA;
+  const mode = await verifiedRunMode();
   await setup();
-  phase = 'healthy-and-delayed-controls';
-  await samples();
-  phase = 'outage-restoration';
-  await outageCycles();
-  phase = 'configuration-only-smoke';
-  await stop(app);
-  await assertFree(SMOKE_PORT);
-  // childEnv was populated from an allowlist; no database URL/password is inherited.
-  await exec('pnpm', ['exec', 'tsx', 'scripts/source-failure-smoke.ts', '--configuration-only'], 'configuration-only-smoke-failed', { ms: 110000 });
-  sanitized.configurationOnly = { pass: true, invalidSource: 500, healthyFixture: 200, missingFixtureProduct: 404, port: SMOKE_PORT };
+  if (mode === 'targeted-loading-followup') {
+    phase = 'targeted-healthy-controls';
+    await pageIn({}, async (page) => {
+      sanitized.healthy = {};
+      await timed(page, sanitized.healthy);
+      await productReturn(page, sanitized.healthy);
+      await health404(page, sanitized.healthy);
+    });
+    phase = 'targeted-loading-observations';
+    await targetedObservations();
+  } else {
+    phase = 'healthy-and-delayed-controls';
+    await samples();
+    phase = 'outage-restoration';
+    await outageCycles();
+    phase = 'configuration-only-smoke';
+    await stop(app);
+    await assertFree(SMOKE_PORT);
+    // childEnv was populated from an allowlist; no database URL/password is inherited.
+    await exec('pnpm', ['exec', 'tsx', 'scripts/source-failure-smoke.ts', '--configuration-only'], 'configuration-only-smoke-failed', { ms: 110000 });
+    sanitized.configurationOnly = { pass: true, invalidSource: 500, healthyFixture: 200, missingFixtureProduct: 404, port: SMOKE_PORT };
+  }
 } catch (error) { recordFailure(phase, error); }
 finally {
   await cleanup();
@@ -606,7 +905,20 @@ finally {
     noFixtureSubstitution: outcome(Boolean(c.length), qualified && c.length === 3 && c.every((x) => x.outage.rawNoSubstitution && x.outage.renderedNoSubstitution && x.persistent.rawNoSubstitution && x.persistent.renderedNoSubstitution && x.firstRestored.catalog?.exactBooks) && sanitized.noJavaScript?.pass),
     cleanupAndRepositoryIntegrity: outcome(Boolean(sanitized.preflight.checkout), sanitized.cleanup.trackedIntegrity === 'passed' && Object.values(sanitized.cleanup).every((x) => x === 'passed')),
   };
-  sanitized.result = !sanitized.failures.length && sanitized.configurationOnly?.pass && Object.values(sanitized.decisions).every((x) => x === 'PASS') ? 'PASS' : sanitized.healthy ? 'FAIL' : 'BLOCKED';
+  if (sanitized.followup) {
+    const observations = sanitized.followup.observations ?? [];
+    const finished = (index) => observations[index] ? (observations[index].pass ? 'PASS' : 'FAIL') : 'NOT RUN';
+    sanitized.decisions = {
+      environmentAndSourceIdentity: sanitized.decisions.environmentAndSourceIdentity,
+      healthyStatusControls: sanitized.decisions.healthyStatusControls,
+      nativeGetLoadingObservation: finished(0),
+      hydratedLinkLoadingObservation: finished(1),
+      cleanupAndRepositoryIntegrity: sanitized.decisions.cleanupAndRepositoryIntegrity,
+    };
+    sanitized.result = !sanitized.failures.length && Object.values(sanitized.decisions).every((x) => x === 'PASS') ? 'PASS' : sanitized.healthy ? 'FAIL' : 'BLOCKED';
+  } else {
+    sanitized.result = !sanitized.failures.length && sanitized.configurationOnly?.pass && Object.values(sanitized.decisions).every((x) => x === 'PASS') ? 'PASS' : sanitized.healthy ? 'FAIL' : 'BLOCKED';
+  }
   if (evidenceDir) {
     try { await writeFile(join(evidenceDir, 'evidence.json'), `${JSON.stringify(sanitized, null, 2)}\n`, { mode: 0o600, flag: 'wx' }); } catch { process.stdout.write('Catalog resilience evidence could not be written.\n'); process.exitCode = 1; }
   }

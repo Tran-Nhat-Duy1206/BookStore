@@ -11,8 +11,10 @@ jobs:
   catalog-resilience:
     if: >-
       ${{ github.repository == 'Tran-Nhat-Duy1206/BookStore' &&
-          github.event.created == true && github.event.deleted == false &&
-          github.run_attempt == '1' }}
+          github.event.deleted == false && github.run_attempt == '1' &&
+          (github.event.created == true ||
+           (github.event.created == false && github.event.forced == false &&
+            github.event.before == 'c597a30210cd97cf050ed4cd5004c02522b6dcec')) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
